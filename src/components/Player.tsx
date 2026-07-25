@@ -17,7 +17,15 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { formatDuration } from "../lib/format";
 import { activeSubtitle } from "../lib/subtitles";
 import { captureVideoFrame, screenshotFileName } from "../lib/screenshots";
@@ -63,12 +71,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [volume, setVolume] = useState(0.8);
   const [muted, setMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [videoAspectRatio, setVideoAspectRatio] = useState(16 / 9);
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
+  const [subtitleText, setSubtitleText] = useState("");
   const [playbackError, setPlaybackError] = useState(false);
   const [screenshotNotice, setScreenshotNotice] = useState<{ success: boolean; message: string } | null>(null);
   const screenshotNoticeTimerRef = useRef<number | null>(null);
   const focusRequestedFullscreenRef = useRef(false);
   const focusModeRef = useRef(false);
+  const fullscreenTransitionRef = useRef(false);
   const [focusMode, setFocusMode] = useState(false);
 
   const togglePlayback = () => {
@@ -111,7 +122,16 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     setPlaybackRate(1);
   };
   const toggleFullscreen = () => {
-    void isAppFullscreen().then((fullscreen) => setAppFullscreen(!fullscreen)).catch(() => undefined);
+    if (fullscreenTransitionRef.current) return;
+    fullscreenTransitionRef.current = true;
+    void isAppFullscreen()
+      .then((fullscreen) => setAppFullscreen(!fullscreen))
+      .catch(() => undefined)
+      .finally(() => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => { fullscreenTransitionRef.current = false; });
+        });
+      });
   };
   const enterFocusMode = () => {
     focusModeRef.current = true;
@@ -197,33 +217,58 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     if (focusRequestedFullscreenRef.current) void setAppFullscreen(false).catch(() => undefined);
   }, []);
 
-  const subtitleText = useMemo(
-    () => (subtitlesEnabled ? activeSubtitle(subtitleCues, currentTime) : ""),
-    [currentTime, subtitleCues, subtitlesEnabled],
-  );
+  const syncSubtitleAt = useCallback((time: number) => {
+    const next = subtitlesEnabled ? activeSubtitle(subtitleCues, time) : "";
+    setSubtitleText((current) => current === next ? current : next);
+  }, [subtitleCues, subtitlesEnabled]);
+
+  useEffect(() => {
+    const syncSubtitle = () => syncSubtitleAt(videoRef.current?.currentTime ?? 0);
+    syncSubtitle();
+    if (!playing || !subtitlesEnabled || subtitleCues.length === 0) return;
+    const timer = window.setInterval(syncSubtitle, 100);
+    return () => window.clearInterval(timer);
+  }, [playing, subtitleCues.length, subtitlesEnabled, syncSubtitleAt]);
+
+  const videoFrameStyle = {
+    "--video-aspect": String(videoAspectRatio),
+  } as CSSProperties;
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.55 ? Volume1 : Volume2;
 
   return (
     <main className={focusMode ? "player-shell focus-mode" : "player-shell"}>
-      <video
-        ref={videoRef}
-        className="video-surface"
-        crossOrigin="anonymous"
-        src={source || undefined}
-        autoPlay={Boolean(source)}
-        onClick={togglePlayback}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onDurationChange={(event) => setDuration(event.currentTarget.duration)}
-        onLoadedMetadata={(event) => { event.currentTarget.playbackRate = playbackRate; }}
-        onRateChange={(event) => setPlaybackRate(event.currentTarget.playbackRate)}
-        onVolumeChange={(event) => {
-          setVolume(event.currentTarget.volume);
-          setMuted(event.currentTarget.muted);
-        }}
-        onError={() => setPlaybackError(true)}
-      />
+      <div className="video-viewport" onClick={togglePlayback}>
+        <div className="video-frame" style={videoFrameStyle}>
+          <video
+            ref={videoRef}
+            className="video-surface"
+            crossOrigin="anonymous"
+            src={source || undefined}
+            autoPlay={Boolean(source)}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onTimeUpdate={(event) => {
+              const time = event.currentTarget.currentTime;
+              setCurrentTime(time);
+              syncSubtitleAt(time);
+            }}
+            onDurationChange={(event) => setDuration(event.currentTarget.duration)}
+            onLoadedMetadata={(event) => {
+              const video = event.currentTarget;
+              video.playbackRate = playbackRate;
+              if (video.videoWidth > 0 && video.videoHeight > 0) {
+                setVideoAspectRatio(video.videoWidth / video.videoHeight);
+              }
+            }}
+            onRateChange={(event) => setPlaybackRate(event.currentTarget.playbackRate)}
+            onVolumeChange={(event) => {
+              setVolume(event.currentTarget.volume);
+              setMuted(event.currentTarget.muted);
+            }}
+            onError={() => setPlaybackError(true)}
+          />
+        </div>
+      </div>
       {!source && <div className="player-placeholder"><FilmMark /><strong>{media.name}</strong><span>{t("player.localPreview")}</span></div>}
       {playbackError && <div className="player-error"><strong>{t("player.videoDecodeFailed")}</strong><span>{t("player.videoUnsupported")}</span></div>}
       {subtitleText && <div className="subtitle-overlay">{subtitleText}</div>}

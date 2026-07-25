@@ -56,5 +56,8 @@ export function parseSubtitles(fileName: string, contents: string): SubtitleCue[
 }
 
 export function activeSubtitle(cues: SubtitleCue[], currentTime: number): string {
-  return cues.find((cue) => currentTime >= cue.start && currentTime <= cue.end)?.text ?? "";
+  return cues
+    .filter((cue) => currentTime >= cue.start && currentTime <= cue.end)
+    .map((cue) => cue.text)
+    .join("\n");
 }

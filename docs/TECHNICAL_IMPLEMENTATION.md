@@ -336,6 +336,8 @@ button / axis
 - `playbackRate` 实现倍速。
 - React 状态同步播放、时长、音量、错误和速度。
 - 倍速阶梯由 `lib/playbackRate.ts` 单独维护并测试。
+- `loadedmetadata` 读取 `videoWidth / videoHeight`，通过固定比例容器约束视频画面；窗口尺寸变化和原生全屏切换只改变容器尺寸，不改变视频比例。
+- 全屏命令在窗口状态切换完成前锁定，防止手柄或键盘连发触发相互覆盖的异步窗口操作。
 
 ### 11.2 字幕链路
 
@@ -350,13 +352,15 @@ sequenceDiagram
     App->>Parser: parseSubtitles(fileName, contents)
     Parser-->>App: SubtitleCue[]
     App->>Player: subtitleCues
-    Player->>Player: currentTime 查找 activeSubtitle
+    Player->>Player: timeupdate 与 100 ms 校准查找 activeSubtitle
 ```
 
 - SRT 按空块与 `-->` 时间行解析。
 - ASS/SSA 读取 `Dialogue:` 的时间和第 10 列以后文本。
 - 清理 `\N`、HTML 标签和 ASS 花括号样式。
-- 当前每次更新时间使用线性查找活动字幕；字幕数量很大时可改为二分查找。
+- 播放时除 `timeupdate` 外每 100 ms 读取媒体元素的真实时间，避免窗口全屏切换延迟事件时丢失短字幕。
+- `activeSubtitle` 返回当前时间内的全部活动字幕并按换行连接，避免重叠字幕只显示第一条。
+- 当前每次更新时间使用线性筛选活动字幕；字幕数量很大时可改为二分查找起点后扫描重叠区间。
 
 ### 11.3 截图链路
 
