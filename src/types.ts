@@ -24,6 +24,7 @@ export interface DirectoryListing {
 export type StartupView = "lastPath" | "drives" | "favorites";
 export type AppLanguage = "zh-CN" | "en-US";
 export type MangaStartSide = "left" | "right";
+export type BrowserViewMode = "list" | "grid";
 
 export interface FavoriteFolder {
   name: string;
@@ -37,6 +38,7 @@ export interface AppPreferences {
   favoriteFolders: FavoriteFolder[];
   screenshotDirectory: string;
   mangaStartSide: MangaStartSide;
+  browserViewMode: BrowserViewMode;
 }
 
 export interface AudioMetadata {

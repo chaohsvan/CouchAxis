@@ -41,6 +41,7 @@ export const CONTROLLER_HELP_ITEMS: Record<ControllerHelpContext, ControllerHelp
     { controls: ["confirm"], description: "help.action.open" },
     { controls: ["back"], description: "help.action.parent" },
     { controls: ["top"], description: "help.action.favorite" },
+    { controls: ["select"], description: "help.action.browserView" },
     { controls: ["start"], description: "help.action.fullscreen" },
     sharedHelp,
   ],

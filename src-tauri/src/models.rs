@@ -84,6 +84,19 @@ impl Default for MangaStartSide {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BrowserViewMode {
+    List,
+    Grid,
+}
+
+impl Default for BrowserViewMode {
+    fn default() -> Self {
+        Self::List
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppPreferences {
@@ -93,6 +106,7 @@ pub struct AppPreferences {
     pub favorite_folders: Vec<FavoriteFolder>,
     pub screenshot_directory: String,
     pub manga_start_side: MangaStartSide,
+    pub browser_view_mode: BrowserViewMode,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]

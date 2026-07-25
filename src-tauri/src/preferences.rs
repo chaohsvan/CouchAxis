@@ -101,5 +101,9 @@ mod tests {
 
         assert_eq!(preferences.last_path.as_deref(), Some("D:\\Movies"));
         assert_eq!(preferences.app, AppPreferences::default());
+        assert_eq!(
+            preferences.app.browser_view_mode,
+            crate::models::BrowserViewMode::List
+        );
     }
 }

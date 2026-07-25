@@ -116,6 +116,8 @@ CouchAxis/
 - 启动时并行加载磁盘、上次路径和偏好。
 - 维护磁盘区、文件区、设置页和各选择器的选中位置。
 - 发起目录浏览并处理加载、错误和竞态。
+- 返回父目录时将子目录路径作为首选条目传入浏览请求，结果加载后按不区分大小写的路径匹配恢复选择。
+- 在偏好中维护文件列表/网格模式，工具栏与手柄动作共用同一更新入口。
 - 根据文件类型打开视频、音乐或图片页面。
 - 构建音乐队列和切歌策略。
 - 自动查找与手动切换字幕。
@@ -255,7 +257,8 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
   "showHiddenFiles": false,
   "favoriteFolders": [],
   "screenshotDirectory": "...\\CouchAxis Screenshots",
-  "mangaStartSide": "left"
+  "mangaStartSide": "left",
+  "browserViewMode": "list"
 }
 ```
 
@@ -264,6 +267,7 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - 进程内使用全局 `Mutex` 串行化读取和写入。
 - 写入前创建配置目录。
 - 截图目录为空时回退到系统图片目录并尝试创建。
+- `browserViewMode` 缺失时默认升级为 `list`，随后由防抖偏好保存写回。
 - 当前直接覆盖完整 JSON；后续如引入多窗口，应改为临时文件写入后原子替换。
 
 音乐播放模式当前单独保存在前端 `localStorage` 的 `couchaxis.audioMode`，这是现有实现的不一致点。建议后续并入 `AppPreferences`。

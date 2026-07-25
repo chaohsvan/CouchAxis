@@ -18,6 +18,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   favoriteFolders: [],
   screenshotDirectory: "D:\\Pictures\\CouchAxis Screenshots",
   mangaStartSide: "left",
+  browserViewMode: "list",
 };
 const demoListings: Record<string, DirectoryListing> = {
   [DEMO_ROOT]: {
@@ -43,6 +44,13 @@ const demoListings: Record<string, DirectoryListing> = {
       { name: "Mountain Lake.jpg", path: "D:\\Movies\\Mountain Lake.jpg", kind: "image", size: 8_912_896, modifiedAt: 1784163600, extension: "JPG" },
       { name: "Quiet Streets.mp3", path: "D:\\Movies\\Quiet Streets.mp3", kind: "audio", size: 10_485_760, modifiedAt: 1784077200, extension: "MP3" },
       { name: "Summer Window.png", path: "D:\\Movies\\Summer Window.png", kind: "image", size: 5_242_880, modifiedAt: 1784077200, extension: "PNG" },
+    ],
+  },
+  "D:\\Movies\\Archive": {
+    path: "D:\\Movies\\Archive",
+    parent: "D:\\Movies",
+    entries: [
+      { name: "Deep Space.ogg", path: "D:\\Movies\\Archive\\Deep Space.ogg", kind: "audio", size: 18_874_368, modifiedAt: 1783987200, extension: "OGG" },
     ],
   },
 };

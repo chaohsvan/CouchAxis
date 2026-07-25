@@ -1,4 +1,4 @@
-import { FolderHeart, HardDrive, Settings, Usb } from "lucide-react";
+import { FolderHeart, HardDrive, Settings, Trash2, Usb } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 import type { FavoriteFolder, RootEntry } from "../types";
@@ -12,6 +12,7 @@ interface DriveRailProps {
   settingsActive: boolean;
   onSelectIndex: (index: number) => void;
   onSelectPath: (path: string) => void;
+  onRemoveFavorite: (path: string) => void;
   onOpenSettings: () => void;
 }
 
@@ -24,6 +25,7 @@ export function DriveRail({
   settingsActive,
   onSelectIndex,
   onSelectPath,
+  onRemoveFavorite,
   onOpenSettings,
 }: DriveRailProps) {
   const { t } = useI18n();
@@ -77,19 +79,31 @@ export function DriveRail({
             const index = roots.length + favoriteIndex;
             const active = currentPath.toLowerCase() === favorite.path.toLowerCase();
             return (
-              <button
-                type="button"
-                className={`${active ? "drive-item active" : "drive-item"}${focused && selectedIndex === index ? " focused" : ""}`}
-                key={favorite.path}
-                ref={selectedIndex === index ? selectedRef : undefined}
-                onMouseEnter={() => onSelectIndex(index)}
-                onFocus={() => onSelectIndex(index)}
-                onClick={() => onSelectPath(favorite.path)}
-                title={favorite.path}
-              >
-                <FolderHeart aria-hidden="true" />
-                <span>{favorite.name}</span>
-              </button>
+              <div className="favorite-entry" key={favorite.path}>
+                <button
+                  type="button"
+                  className={`${active ? "drive-item active" : "drive-item"}${focused && selectedIndex === index ? " focused" : ""}`}
+                  ref={selectedIndex === index ? selectedRef : undefined}
+                  onMouseEnter={() => onSelectIndex(index)}
+                  onFocus={() => onSelectIndex(index)}
+                  onClick={() => onSelectPath(favorite.path)}
+                  title={favorite.path}
+                >
+                  <FolderHeart aria-hidden="true" />
+                  <span>{favorite.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="favorite-remove"
+                  onMouseEnter={() => onSelectIndex(index)}
+                  onFocus={() => onSelectIndex(index)}
+                  onClick={() => onRemoveFavorite(favorite.path)}
+                  title={t("nav.removeFavorite")}
+                  aria-label={`${t("nav.removeFavorite")}：${favorite.name}`}
+                >
+                  <Trash2 aria-hidden="true" />
+                </button>
+              </div>
             );
           })}
         </nav>

@@ -1,4 +1,4 @@
-import { ChevronLeft, Gamepad2, Monitor, RefreshCw, Star, WifiOff } from "lucide-react";
+import { ChevronLeft, Gamepad2, LayoutGrid, List, Monitor, RefreshCw, Star, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "./components/Brand";
 import { ControllerHelpOverlay } from "./components/ControllerHelpOverlay";
@@ -22,6 +22,7 @@ import {
   findMatchingSubtitle,
   getLastPath,
   getPreferences,
+  isAppFullscreen,
   listAudioQueue,
   listDirectory,
   listRoots,
@@ -30,6 +31,7 @@ import {
   readSubtitle,
   saveLastPath,
   savePreferences,
+  setAppFullscreen,
   mediaSource,
 } from "./services/desktop";
 import type {
@@ -38,6 +40,7 @@ import type {
   AppPreferences,
   AudioMetadata,
   AudioPlaybackMode,
+  BrowserViewMode,
   DirectoryListing,
   FileEntry,
   MangaStartSide,
@@ -79,6 +82,7 @@ export function App() {
   const [roots, setRoots] = useState<RootEntry[]>([]);
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [browserGridColumns, setBrowserGridColumns] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [media, setMedia] = useState<FileEntry | null>(null);
@@ -110,13 +114,20 @@ export function App() {
     [preferences.language],
   );
 
-  const browseWithVisibility = useCallback(async (path: string, showHiddenFiles: boolean) => {
+  const browseWithVisibility = useCallback(async (
+    path: string,
+    showHiddenFiles: boolean,
+    preferredEntryPath?: string,
+  ) => {
     setLoading(true);
     setError("");
     try {
       const result = await listDirectory(path, showHiddenFiles);
       setListing(result);
-      setSelectedIndex(0);
+      const preferredIndex = preferredEntryPath
+        ? result.entries.findIndex((entry) => entry.path.toLowerCase() === preferredEntryPath.toLowerCase())
+        : -1;
+      setSelectedIndex(preferredIndex >= 0 ? preferredIndex : 0);
       await saveLastPath(result.path);
     } catch (reason) {
       const failure = reason as { message?: string };
@@ -127,7 +138,11 @@ export function App() {
   }, []);
 
   const browse = useCallback(
-    (path: string) => browseWithVisibility(path, preferences.showHiddenFiles),
+    (path: string, preferredEntryPath?: string) => browseWithVisibility(
+      path,
+      preferences.showHiddenFiles,
+      preferredEntryPath,
+    ),
     [browseWithVisibility, preferences.showHiddenFiles],
   );
 
@@ -203,6 +218,15 @@ export function App() {
     });
   }, [listing]);
 
+  const removeFavorite = useCallback((path: string) => {
+    setPreferences((current) => ({
+      ...current,
+      favoriteFolders: current.favoriteFolders.filter(
+        (favorite) => favorite.path.toLowerCase() !== path.toLowerCase(),
+      ),
+    }));
+  }, []);
+
   const updateStartupView = useCallback((startupView: StartupView) => {
     setPreferences((current) => ({ ...current, startupView }));
   }, []);
@@ -215,10 +239,23 @@ export function App() {
     setPreferences((current) => ({ ...current, mangaStartSide }));
   }, []);
 
+  const updateBrowserViewMode = useCallback((browserViewMode: BrowserViewMode) => {
+    setPreferences((current) => ({ ...current, browserViewMode }));
+  }, []);
+
+  const toggleBrowserViewMode = useCallback(() => {
+    setPreferences((current) => ({
+      ...current,
+      browserViewMode: current.browserViewMode === "list" ? "grid" : "list",
+    }));
+  }, []);
+
   const updateShowHiddenFiles = useCallback((showHiddenFiles: boolean) => {
     setPreferences((current) => ({ ...current, showHiddenFiles }));
-    if (listing) void browseWithVisibility(listing.path, showHiddenFiles);
-  }, [browseWithVisibility, listing]);
+    if (listing) {
+      void browseWithVisibility(listing.path, showHiddenFiles, listing.entries[selectedIndex]?.path);
+    }
+  }, [browseWithVisibility, listing, selectedIndex]);
 
   const browseScreenshotFolders = useCallback(async (path: string) => {
     const requestId = ++folderPickerRequestRef.current;
@@ -353,7 +390,7 @@ export function App() {
       setMedia(null);
       return;
     }
-    if (listing?.parent) void browse(listing.parent);
+    if (listing?.parent) void browse(listing.parent, listing.path);
   }, [browse, listing, media]);
 
   useEffect(() => {
@@ -560,6 +597,17 @@ export function App() {
             ? "settings"
             : "browser";
 
+  const handleBrowserFavoriteAction = useCallback(() => {
+    const favoriteIndex = navigationIndex - roots.length;
+    const selectedFavorite = browserRegion === "navigation"
+      && favoriteIndex >= 0
+      && favoriteIndex < preferences.favoriteFolders.length
+      ? preferences.favoriteFolders[favoriteIndex]
+      : null;
+    if (selectedFavorite) removeFavorite(selectedFavorite.path);
+    else toggleCurrentFavorite();
+  }, [browserRegion, navigationIndex, preferences.favoriteFolders, removeFavorite, roots.length, toggleCurrentFavorite]);
+
   useEffect(() => {
     setControllerHelpOpen(false);
   }, [controllerHelpContext]);
@@ -671,16 +719,34 @@ export function App() {
       return;
     }
 
-    if (action === "left") setBrowserRegion("navigation");
-    else if (action === "right") setBrowserRegion("files");
-    else if (action === "up") {
+    if (action === "left") {
+      if (browserRegion === "files" && preferences.browserViewMode === "grid" && selectedIndex % browserGridColumns > 0) {
+        setSelectedIndex((index) => Math.max(0, index - 1));
+      } else {
+        setBrowserRegion("navigation");
+      }
+    } else if (action === "right") {
+      if (browserRegion === "navigation") {
+        setBrowserRegion("files");
+      } else if (
+        preferences.browserViewMode === "grid"
+        && selectedIndex + 1 < (listing?.entries.length ?? 0)
+        && (selectedIndex + 1) % browserGridColumns !== 0
+      ) {
+        setSelectedIndex((index) => index + 1);
+      }
+    } else if (action === "up") {
       if (browserRegion === "navigation") setNavigationIndex((index) => Math.max(0, index - 1));
-      else setSelectedIndex((index) => Math.max(0, index - 1));
+      else {
+        const step = preferences.browserViewMode === "grid" ? browserGridColumns : 1;
+        setSelectedIndex((index) => Math.max(0, index - step));
+      }
     } else if (action === "down") {
       if (browserRegion === "navigation") {
         setNavigationIndex((index) => Math.min(Math.max(0, navigationCount - 1), index + 1));
       } else {
-        setSelectedIndex((index) => Math.min(Math.max(0, (listing?.entries.length ?? 1) - 1), index + 1));
+        const step = preferences.browserViewMode === "grid" ? browserGridColumns : 1;
+        setSelectedIndex((index) => Math.min(Math.max(0, (listing?.entries.length ?? 1) - 1), index + step));
       }
     } else if (action === "confirm") {
       if (browserRegion === "navigation") activateNavigation(navigationIndex);
@@ -688,17 +754,20 @@ export function App() {
         const entry = listing?.entries[selectedIndex];
         if (entry) openEntry(entry);
       }
-    } else if (action === "subtitle") toggleCurrentFavorite();
+    } else if (action === "subtitle") handleBrowserFavoriteAction();
+    else if (action === "queue") toggleBrowserViewMode();
     else if (action === "back") goBack();
     else if (action === "fullscreen") {
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else void document.documentElement.requestFullscreen();
+      void isAppFullscreen()
+        .then((fullscreen) => setAppFullscreen(!fullscreen))
+        .catch(() => undefined);
     }
   }, [
     activateSubtitleItem,
     activateNavigation,
     activateFolderPickerItem,
     adjustSelectedSetting,
+    browserGridColumns,
     browserRegion,
     controllerHelpOpen,
     closeSubtitlePicker,
@@ -708,6 +777,7 @@ export function App() {
     folderPickerSelectedIndex,
     goBackInFolderPicker,
     goBack,
+    handleBrowserFavoriteAction,
     listing,
     media,
     navigateAudio,
@@ -718,13 +788,14 @@ export function App() {
     openEntry,
     openScreenshotDirectoryPicker,
     openSubtitlePicker,
+    preferences.browserViewMode,
     selectedIndex,
     subtitleItems,
     subtitlePickerOpen,
     subtitleSelectedIndex,
     settingsOpen,
     settingsSelectedRow,
-    toggleCurrentFavorite,
+    toggleBrowserViewMode,
   ]);
 
   const exitAudioBlackout = useCallback(
@@ -857,6 +928,7 @@ export function App() {
             setBrowserRegion("navigation");
             void browse(path);
           }}
+          onRemoveFavorite={removeFavorite}
           onOpenSettings={openSettings}
         />
         <main className={settingsOpen ? "browser-main settings-main" : "browser-main"}>
@@ -888,6 +960,24 @@ export function App() {
               <span>{t("browser.location")}</span>
               <h1 title={listing?.path}>{displayPath(listing?.path ?? t("common.loading"))}</h1>
             </div>
+            <div className="segmented-control view-mode-control" aria-label={t("browser.viewMode")}>
+              <button
+                type="button"
+                className={preferences.browserViewMode === "list" ? "active" : ""}
+                onClick={() => updateBrowserViewMode("list")}
+                title={t("browser.viewList")}
+                aria-label={t("browser.viewList")}
+                aria-pressed={preferences.browserViewMode === "list"}
+              ><List aria-hidden="true" /></button>
+              <button
+                type="button"
+                className={preferences.browserViewMode === "grid" ? "active" : ""}
+                onClick={() => updateBrowserViewMode("grid")}
+                title={t("browser.viewGrid")}
+                aria-label={t("browser.viewGrid")}
+                aria-pressed={preferences.browserViewMode === "grid"}
+              ><LayoutGrid aria-hidden="true" /></button>
+            </div>
             <div className="toolbar-meta"><Monitor aria-hidden="true" /><span>{t("browser.items", { count: listing?.entries.length ?? 0 })}</span></div>
           </div>
 
@@ -901,12 +991,14 @@ export function App() {
             <FileList
               entries={listing?.entries ?? []}
               loading={loading}
+              viewMode={preferences.browserViewMode}
               selectedIndex={browserRegion === "files" ? selectedIndex : -1}
               onSelect={(index) => {
                 setSelectedIndex(index);
                 setBrowserRegion("files");
               }}
               onOpen={openEntry}
+              onGridColumnsChange={setBrowserGridColumns}
             />
           )}
           </>)}

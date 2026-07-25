@@ -31,6 +31,7 @@ import {
 import { formatDuration } from "../lib/format";
 import { activeLyricsIndex, parseEmbeddedLyrics } from "../lib/lyrics";
 import { useI18n } from "../i18n";
+import { isAppFullscreen, setAppFullscreen } from "../services/desktop";
 import type { AudioMetadata, AudioPlaybackMode, FileEntry } from "../types";
 
 export interface AudioPlayerHandle {
@@ -164,8 +165,7 @@ export const AudioPlayer = forwardRef<AudioPlayerHandle, AudioPlayerProps>(funct
     setMuted(audio.muted);
   };
   const toggleFullscreen = () => {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen();
+    void isAppFullscreen().then((fullscreen) => setAppFullscreen(!fullscreen)).catch(() => undefined);
   };
   const restart = () => {
     const audio = audioRef.current;

@@ -2,23 +2,51 @@ import { Film, Folder, FolderOpen, Image, LoaderCircle, Music2 } from "lucide-re
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 import { formatBytes } from "../lib/format";
-import type { FileEntry } from "../types";
+import type { BrowserViewMode, FileEntry } from "../types";
 
 interface FileListProps {
   entries: FileEntry[];
   loading: boolean;
+  viewMode: BrowserViewMode;
   selectedIndex: number;
   onSelect: (index: number) => void;
   onOpen: (entry: FileEntry) => void;
+  onGridColumnsChange: (columns: number) => void;
 }
 
-export function FileList({ entries, loading, selectedIndex, onSelect, onOpen }: FileListProps) {
+export function FileList({
+  entries,
+  loading,
+  viewMode,
+  selectedIndex,
+  onSelect,
+  onOpen,
+  onGridColumnsChange,
+}: FileListProps) {
   const { t } = useI18n();
   const selectedRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedEntryPath = entries[selectedIndex]?.path;
 
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: "nearest" });
-  }, [selectedIndex]);
+  }, [selectedEntryPath, selectedIndex, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "grid" || !listRef.current) {
+      onGridColumnsChange(1);
+      return;
+    }
+    const list = listRef.current;
+    const updateColumns = () => {
+      const columns = window.getComputedStyle(list).gridTemplateColumns.split(" ").filter(Boolean).length;
+      onGridColumnsChange(Math.max(1, columns));
+    };
+    updateColumns();
+    const observer = new ResizeObserver(updateColumns);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [entries.length, loading, onGridColumnsChange, viewMode]);
 
   if (loading) {
     return <div className="center-state"><LoaderCircle className="spin" aria-hidden="true" /><span>{t("common.loading")}</span></div>;
@@ -28,7 +56,7 @@ export function FileList({ entries, loading, selectedIndex, onSelect, onOpen }: 
   }
 
   return (
-    <div className="file-list" role="listbox" aria-label={t("browser.files")}>
+    <div ref={listRef} className={`file-list ${viewMode}`} role="listbox" aria-label={t("browser.files")}>
       {entries.map((entry, index) => {
         const selected = index === selectedIndex;
         const Icon = entry.kind === "folder" ? Folder : entry.kind === "audio" ? Music2 : entry.kind === "image" ? Image : Film;
@@ -47,7 +75,10 @@ export function FileList({ entries, loading, selectedIndex, onSelect, onOpen }: 
             <span className={`entry-icon ${entry.kind}`}><Icon aria-hidden="true" /></span>
             <span className="entry-copy">
               <strong>{entry.name}</strong>
-              <small>{entry.kind === "folder" ? t("common.folder") : entry.extension ?? ({ video: t("common.video"), audio: t("common.audio"), image: t("common.image") }[entry.kind])}</small>
+              <small>
+                <span>{entry.kind === "folder" ? t("common.folder") : entry.extension ?? ({ video: t("common.video"), audio: t("common.audio"), image: t("common.image") }[entry.kind])}</span>
+                {entry.kind !== "folder" && <span className="entry-inline-size">{formatBytes(entry.size)}</span>}
+              </small>
             </span>
             {entry.kind !== "folder" && <span className="entry-size">{formatBytes(entry.size)}</span>}
           </button>

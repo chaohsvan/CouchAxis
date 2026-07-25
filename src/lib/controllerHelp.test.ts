@@ -8,6 +8,7 @@ describe("controller help mappings", () => {
 
     descriptions.forEach((items) => expect(items).toContain("help.action.toggleHelp"));
     expect(descriptions[contexts.indexOf("browser")]).toContain("help.action.favorite");
+    expect(descriptions[contexts.indexOf("browser")]).toContain("help.action.browserView");
     expect(descriptions[contexts.indexOf("audio")]).toContain("help.action.spectrum");
     expect(descriptions[contexts.indexOf("video")]).toContain("help.action.subtitle");
     expect(descriptions[contexts.indexOf("video")]).toContain("help.action.screenshot");
