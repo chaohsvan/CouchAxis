@@ -1,8 +1,8 @@
 use crate::{
     error::AppError,
     models::{
-        DirectoryListing, EntryKind, FileEntry, SubtitleDirectoryListing, SubtitleEntry,
-        SubtitleEntryKind,
+        ApplicationDirectoryListing, ApplicationEntry, ApplicationEntryKind, DirectoryListing,
+        EntryKind, FileEntry, SubtitleDirectoryListing, SubtitleEntry, SubtitleEntryKind,
     },
 };
 use std::{
@@ -50,6 +50,10 @@ pub fn is_subtitle_path(path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .map(|value| matches!(value.to_ascii_lowercase().as_str(), "srt" | "ass" | "ssa"))
         .unwrap_or(false)
+}
+
+pub fn is_executable_path(path: &Path) -> bool {
+    has_extension(path, &["exe"])
 }
 
 pub fn matching_subtitle_path(video_path: &Path) -> Result<Option<PathBuf>, AppError> {
@@ -158,6 +162,72 @@ pub fn read_directory(path: &Path, show_hidden_files: bool) -> Result<DirectoryL
     });
 
     Ok(DirectoryListing {
+        path: path.to_string_lossy().into_owned(),
+        parent: path
+            .parent()
+            .map(|value| value.to_string_lossy().into_owned()),
+        entries,
+    })
+}
+
+pub fn read_application_directory(
+    path: &Path,
+    show_hidden_files: bool,
+) -> Result<ApplicationDirectoryListing, AppError> {
+    if !path.is_dir() {
+        return Err(AppError::NotDirectory(path.to_string_lossy().into_owned()));
+    }
+
+    let read_dir = fs::read_dir(path).map_err(|source| AppError::io(path, source))?;
+    let mut entries = Vec::new();
+    for item in read_dir.flatten() {
+        let item_path = item.path();
+        let metadata = match item.metadata() {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        let name = item.file_name().to_string_lossy().into_owned();
+        if !show_hidden_files && is_hidden(&name, &metadata) {
+            continue;
+        }
+        let file_type = match item.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        let kind = if file_type.is_dir() {
+            ApplicationEntryKind::Folder
+        } else if file_type.is_file() && is_executable_path(&item_path) {
+            ApplicationEntryKind::Application
+        } else {
+            continue;
+        };
+        entries.push(ApplicationEntry {
+            name,
+            path: item_path.to_string_lossy().into_owned(),
+            kind,
+        });
+    }
+    entries.sort_by(|left, right| {
+        let kind_order = match (&left.kind, &right.kind) {
+            (ApplicationEntryKind::Folder, ApplicationEntryKind::Application) => {
+                std::cmp::Ordering::Less
+            }
+            (ApplicationEntryKind::Application, ApplicationEntryKind::Folder) => {
+                std::cmp::Ordering::Greater
+            }
+            _ => std::cmp::Ordering::Equal,
+        };
+        kind_order.then_with(|| {
+            left.name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase())
+        })
+    });
+
+    Ok(ApplicationDirectoryListing {
         path: path.to_string_lossy().into_owned(),
         parent: path
             .parent()
@@ -300,8 +370,8 @@ pub fn read_subtitle_directory(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_audio_path, is_image_path, is_subtitle_path, is_video_path, matching_subtitle_path,
-        read_audio_queue,
+        is_audio_path, is_executable_path, is_image_path, is_subtitle_path, is_video_path,
+        matching_subtitle_path, read_application_directory, read_audio_queue,
     };
     use std::{
         fs,
@@ -342,6 +412,38 @@ mod tests {
         assert!(is_image_path(Path::new("cover.JPG")));
         assert!(is_image_path(Path::new("frame.webp")));
         assert!(!is_image_path(Path::new("movie.mkv")));
+    }
+
+    #[test]
+    fn recognizes_only_windows_executables_for_application_bindings() {
+        assert!(is_executable_path(Path::new("CouchAxis.EXE")));
+        assert!(!is_executable_path(Path::new("script.bat")));
+        assert!(!is_executable_path(Path::new("shortcut.lnk")));
+    }
+
+    #[test]
+    fn lists_folders_and_executables_for_application_picker() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "couchaxis-application-picker-{}-{unique}",
+            std::process::id()
+        ));
+        let test_directory = TestDirectory(root.clone());
+        fs::create_dir_all(root.join("Tools")).expect("create test directory");
+        fs::write(root.join("Player.exe"), []).expect("write executable");
+        fs::write(root.join("notes.txt"), []).expect("write ignored file");
+
+        let listing = read_application_directory(&test_directory.0, false)
+            .expect("read application directory");
+        let names: Vec<&str> = listing
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Tools", "Player.exe"]);
     }
 
     #[test]

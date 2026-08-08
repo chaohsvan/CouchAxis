@@ -35,9 +35,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .controller-status.connected i { background: var(--green); box-shadow: 0 0 0 3px rgba(114, 214, 160, .12); }
 
 .browser-layout { display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 0; }
-.drive-rail { min-height: 0; display: flex; flex-direction: column; padding: 26px 16px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; }
+.drive-rail { min-height: 0; display: flex; flex-direction: column; padding: 26px 16px; background: var(--panel); border-right: 1px solid var(--line); overflow: hidden; }
+.rail-content { min-height: 0; flex: 1 1 auto; overflow-y: auto; scrollbar-color: #424a4c transparent; }
 .rail-section { flex: 0 0 auto; }
 .favorites-section { margin-top: 24px; }
+.applications-section { margin-top: 24px; }
 .rail-title { margin: 0 12px 12px; color: #7f898b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
 .drive-rail nav { display: grid; gap: 4px; }
 .favorite-entry { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 4px; }
@@ -51,7 +53,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .favorite-remove { width: 36px; min-height: 52px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 3px; color: #7f898b; background: transparent; cursor: pointer; }
 .favorite-remove:hover, .favorite-remove:focus-visible { color: #fff; border-color: #65443d; background: #38211d; }
 .favorite-remove svg { width: 16px; height: 16px; }
-.settings-item { margin-top: auto; }
+.application-item svg, .bind-application-item svg { color: var(--yellow); }
+.bind-application-item { border: 1px dashed #465052; border-left-width: 3px; }
+.rail-actions { flex: 0 0 auto; display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.system-action-item { --hold-progress: 0; position: relative; isolation: isolate; overflow: hidden; user-select: none; touch-action: none; }
+.system-action-item::before { content: ""; position: absolute; z-index: -1; inset: 0; transform: scaleX(var(--hold-progress)); transform-origin: left center; background: rgba(103, 200, 212, .22); }
+.system-action-item.holding { color: #fff; border-left-color: var(--cyan); }
+.system-action-item.shutdown { color: #c9a39d; }
+.system-action-item.shutdown::before { background: rgba(255, 107, 74, .28); }
+.system-action-item.shutdown.holding { color: #fff; border-left-color: var(--accent); }
+.system-action-item.holding svg { filter: drop-shadow(0 0 7px currentColor); }
 .rail-empty { min-height: 42px; display: flex; align-items: center; padding: 0 15px; color: #687274; font-size: 12px; }
 
 .browser-main { min-width: 0; min-height: 0; display: grid; grid-template-rows: 92px minmax(0, 1fr); padding: 0 28px; }
@@ -180,6 +191,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .folder-picker-entry-copy strong { overflow: hidden; font-size: 16px; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
 .folder-picker-entry-copy small { color: var(--muted); font-size: 12px; }
 .folder-picker-footer { display: flex; align-items: center; padding: 0 32px; border-top: 1px solid var(--line); color: #697274; background: #0e1112; font-size: 11px; }
+.application-picker .folder-picker-title > div > span { color: var(--yellow); }
+.application-picker .folder-picker-mark { color: #17150c; background: var(--yellow); }
+.application-picker .folder-picker-row.selected { box-shadow: inset 4px 0 0 var(--yellow); }
+.application-picker .folder-picker-row.application .folder-picker-entry-icon { color: var(--yellow); }
+.application-launch-error { position: fixed; z-index: 160; top: 26px; right: 28px; max-width: min(540px, calc(100vw - 56px)); padding: 13px 17px; border: 1px solid #74483f; border-left: 4px solid var(--accent); border-radius: 4px; color: #f7e6e2; background: rgba(48, 25, 21, .96); box-shadow: 0 14px 34px rgba(0, 0, 0, .38); font-size: 13px; overflow-wrap: anywhere; }
 
 .player-shell { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background: #050606; }
 .player-shell.focus-mode { background: #000; cursor: none; }
@@ -217,6 +233,12 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .speed-control button:hover, .speed-control button:focus-visible { color: #111; background: var(--accent); }
 .speed-control .speed-value { width: 50px; color: #f0f3f2; font-size: 11px; font-variant-numeric: tabular-nums; }
 .speed-control svg { width: 15px; height: 15px; }
+.player-osd { position: absolute; z-index: 9; top: 13%; left: 50%; width: min(340px, calc(100% - 40px)); min-height: 66px; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 4px 12px; align-items: center; padding: 12px 18px; transform: translateX(-50%); border: 1px solid #5a6466; border-radius: 4px; color: #fff; background: rgba(11, 13, 14, .9); box-shadow: 0 12px 36px rgba(0, 0, 0, .34); pointer-events: none; }
+.player-osd svg { grid-row: 1 / span 2; width: 27px; height: 27px; color: var(--green); }
+.player-osd.speed svg { grid-row: 1; color: var(--accent); }
+.player-osd strong { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.player-osd-meter { height: 5px; overflow: hidden; background: #3a4244; }
+.player-osd-meter i { display: block; height: 100%; background: var(--green); }
 .subtitle-overlay { position: absolute; z-index: 4; left: 8%; right: 8%; bottom: 142px; padding: 0 1ch; color: #fff; font-size: 26px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; text-align: center; unicode-bidi: plaintext; white-space: pre-line; text-shadow: 0 2px 3px #000, 0 0 6px #000; pointer-events: none; transform: translateZ(0); }
 .screenshot-notice { position: absolute; z-index: 8; left: 50%; top: 104px; max-width: min(640px, calc(100% - 40px)); display: flex; align-items: center; gap: 10px; padding: 11px 15px; transform: translateX(-50%); border: 1px solid #496052; border-radius: 4px; color: #eaf0ed; background: rgba(15, 24, 20, .94); box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
 .screenshot-notice.error { border-color: #845247; background: rgba(38, 18, 15, .95); }

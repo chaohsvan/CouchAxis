@@ -1,7 +1,7 @@
 # CouchAxis 技术架构与实现路径
 
 > 文档版本：0.1.0-current
-> 最后核对：2026-07-24
+> 最后核对：2026-08-08
 > 本文同时描述“当前代码已经实现的方案”和“迁移到 libmpv / SDL2 的目标方案”。未完成项会明确标记为规划。
 
 ## 1. 技术目标
@@ -81,6 +81,7 @@ CouchAxis/
 │  │  ├─ ImageViewer.tsx           图片视口、缩放、漫画、专注模式
 │  │  ├─ SubtitlePicker.tsx        应用内字幕选择器
 │  │  ├─ FolderPicker.tsx          截图目录选择器
+│  │  ├─ ApplicationPicker.tsx     EXE 应用选择器
 │  │  ├─ SettingsPanel.tsx         设置页面
 │  │  └─ ControllerHelpOverlay.tsx 页面级手柄说明
 │  ├─ hooks/
@@ -91,6 +92,9 @@ CouchAxis/
 │  │  ├─ lyrics.ts                 内置歌词与当前行计算
 │  │  ├─ screenshots.ts            视频帧合成和 PNG 编码
 │  │  ├─ playbackRate.ts           倍速阶梯
+│  │  ├─ videoProgress.ts          最近三个视频续播规则
+│  │  ├─ applicationShortcuts.ts   应用绑定去重与移除
+│  │  ├─ holdAction.ts             退出/关机长按进度
 │  │  ├─ imageViewport.ts          图片适应、缩放和平移边界
 │  │  └─ controllerHelp.ts         页面级动作说明数据
 │  └─ services/desktop.ts          桌面/浏览器双实现适配层
@@ -115,6 +119,9 @@ CouchAxis/
 
 - 启动时并行加载磁盘、上次路径和偏好。
 - 维护磁盘区、文件区、设置页和各选择器的选中位置。
+- 维护退出/关机长按状态、动画进度和取消条件，只有进度达到 100% 才调用桌面命令。
+- 维护应用选择器、侧栏应用绑定和启动错误反馈。
+- 接收视频播放器定期上报的进度，并维护最多三个有效续播记录。
 - 发起目录浏览并处理加载、错误和竞态。
 - 返回父目录时将子目录路径作为首选条目传入浏览请求，结果加载后按不区分大小写的路径匹配恢复选择。
 - 在偏好中维护文件列表/网格模式，工具栏与手柄动作共用同一更新入口。
@@ -176,8 +183,12 @@ CouchAxis/
 
 | 命令 | 主要输入 | 输出 | 说明 |
 | --- | --- | --- | --- |
+| `exit_application` | 应用句柄 | `()` | 使用 Tauri `AppHandle::exit(0)` 退出 CouchAxis |
+| `shutdown_system` | 无 | `()` | 在阻塞任务中执行平台适配层的系统关机 |
 | `list_roots` | 无 | `RootEntry[]` | 枚举固定盘和可移动盘 |
 | `list_directory` | 路径、隐藏开关 | `DirectoryListing` | 返回文件夹和支持的媒体 |
+| `list_application_directory` | 路径、隐藏开关 | `ApplicationDirectoryListing` | 仅返回文件夹和 `.exe` |
+| `launch_application` | EXE 路径 | `()` | 规范化并直接创建目标进程 |
 | `list_audio_queue` | 根路径、隐藏开关 | `FileEntry[]` | 递归扫描音乐队列 |
 | `read_audio_metadata` | 文件路径 | `AudioMetadata` | lofty 读取标签、歌词和封面 |
 | `list_subtitle_directory` | 路径、隐藏开关 | `SubtitleDirectoryListing` | 仅返回文件夹和字幕 |
@@ -207,6 +218,8 @@ interface CommandError {
 - `config_directory_unavailable`
 - `invalid_preferences`
 - `unsupported_audio`
+- `unsupported_application`
+- `application_not_found`
 - `unsupported_subtitle`
 - `subtitle_too_large`
 - `invalid_screenshot`
@@ -243,6 +256,17 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 
 当前排除网络盘、光驱、RAM Disk 和未知类型。Unix 适配器暂时只返回 `/`，用于保证核心代码可编译，不代表 macOS/Linux 已完成产品适配。
 
+### 8.5 应用程序选择与启动
+
+应用选择使用独立的 `read_application_directory()`，不会复用普通媒体列表，也不会扩大普通文件浏览器的展示范围。扫描规则如下：
+
+- 只返回真实目录和扩展名不区分大小写的 `.exe` 文件。
+- 跳过符号链接，避免通过链接绕过选择器所显示的目标路径。
+- 复用隐藏文件设置，默认不展示隐藏目录和可执行文件。
+- 文件夹优先，随后按名称不区分大小写排序。
+
+启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层执行 `Command::new(path).spawn()`。路径不拼接命令、不传给 PowerShell 或 `cmd.exe`，因此文件名中的空格和命令字符不会被解释为额外参数。
+
 ## 9. 偏好持久化
 
 偏好保存在 Tauri 应用配置目录下的 `preferences.json`。数据结构使用 `serde(default)`，缺失字段自动采用默认值，因此旧版本配置可以向前迁移。
@@ -256,6 +280,8 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
   "language": "zh-CN",
   "showHiddenFiles": false,
   "favoriteFolders": [],
+  "applicationShortcuts": [],
+  "recentVideoProgress": [],
   "screenshotDirectory": "...\\CouchAxis Screenshots",
   "mangaStartSide": "left",
   "browserViewMode": "list"
@@ -268,6 +294,8 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - 写入前创建配置目录。
 - 截图目录为空时回退到系统图片目录并尝试创建。
 - `browserViewMode` 缺失时默认升级为 `list`，随后由防抖偏好保存写回。
+- `applicationShortcuts` 保存用户确认绑定的名称与规范路径；绑定相同路径时不区分大小写去重。
+- `recentVideoProgress` 最多保存三个 `{ path, positionSeconds, durationSeconds, updatedAt }` 条目。
 - 当前直接覆盖完整 JSON；后续如引入多窗口，应改为临时文件写入后原子替换。
 
 音乐播放模式当前单独保存在前端 `localStorage` 的 `couchaxis.audioMode`，这是现有实现的不一致点。建议后续并入 `AppPreferences`。
@@ -325,6 +353,12 @@ button / axis
 
 音乐黑屏状态下，`onAnyInput` 先退出黑屏并返回 `true`。输入层随后抑制这次按键对应的正常动作，防止“退出黑屏”的同一次按键又触发暂停、切歌或其他命令。
 
+### 10.6 退出与关机长按保护
+
+确认键使用成对动作：按下发送 `confirm`，松开发送 `confirmRelease`。键盘 Enter 和手柄主确认键使用同一语义，手柄断开时也补发释放动作，避免长按状态残留。
+
+`App.tsx` 在退出或关机导航项上收到 `confirm` 后，以 `requestAnimationFrame` 计算经过时间，`lib/holdAction.ts` 将进度限制在 `0..1`。只有持续达到 1.8 秒才调用桌面适配层；松开确认键、指针离开、导航变化或组件卸载都会取消计时。按钮通过 CSS 自定义属性 `--hold-progress` 显示同一份进度状态，因此视觉反馈与真正的触发条件不会分离。
+
 ## 11. 视频实现
 
 ### 11.1 当前播放后端
@@ -339,7 +373,22 @@ button / axis
 - `loadedmetadata` 读取 `videoWidth / videoHeight`，通过固定比例容器约束视频画面；窗口尺寸变化和原生全屏切换只改变容器尺寸，不改变视频比例。
 - 全屏命令在窗口状态切换完成前锁定，防止手柄或键盘连发触发相互覆盖的异步窗口操作。
 
-### 11.2 字幕链路
+### 11.2 续播进度
+
+`Player.tsx` 将当前时间和总时长保存在 ref 中，避免卸载清理函数读取到旧 React 状态。上报时机包括：
+
+- `timeupdate` 期间每 10 秒一次。
+- `pause`。
+- 播放结束。
+- 关闭按钮与组件卸载。
+
+`App.tsx` 把上报交给纯函数 `updateRecentVideoProgress()`：位置向下取整到秒，同一路径按 Windows 路径语义不区分大小写替换，结果按最近更新顺序放在数组首位并截断为三个。位置小于 5 秒、总时长无效或剩余不超过 15 秒时删除该路径记录。再次打开视频后，`loadedmetadata` 取得真实时长，再校验并设置 `currentTime`，避免在媒体元数据尚未就绪时跳转。
+
+### 11.3 全屏播放反馈
+
+音量、静音和倍速调整统一生成 `PlaybackOsd` 状态。只有窗口当前处于原生全屏，或视频已进入专注模式时才提交提示；同一计时器在连续调节时被重置，最后一次操作 1.4 秒后清除。提示是播放器内的只读覆盖层，不捕获指针，并使用高于视频和字幕的独立层级。
+
+### 11.4 字幕链路
 
 ```mermaid
 sequenceDiagram
@@ -362,7 +411,7 @@ sequenceDiagram
 - `activeSubtitle` 返回当前时间内的全部活动字幕并按换行连接，避免重叠字幕只显示第一条。
 - 当前每次更新时间使用线性筛选活动字幕；字幕数量很大时可改为二分查找起点后扫描重叠区间。
 
-### 11.3 截图链路
+### 11.5 截图链路
 
 1. 校验视频已经具有当前帧和尺寸。
 2. 创建与原视频分辨率相同的 Canvas。
@@ -509,6 +558,11 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 - 截图重名自动编号，不覆盖用户文件。
 - 阻塞文件操作放入 `spawn_blocking`。
 - 异步队列、字幕自动查找和目录选择使用请求 ID 或活动标记避免过期响应覆盖新状态。
+- 退出与系统关机没有单击入口，前端统一要求 1.8 秒持续确认。
+- Windows 关机参数固定为 `shutdown.exe /s /t 0`，不经过 shell，不接受前端字符串，也不使用强制关闭参数 `/f`。
+- 应用绑定选择器只暴露 `.exe`，启动命令再次校验扩展名、规范路径与文件类型。
+- 启动 EXE 使用固定程序路径直接创建进程，不经过 shell，也不允许前端注入命令参数。
+- 非 Windows 平台的关机适配器明确返回“不支持”，后续应在对应平台实现后再开放按钮。
 
 ### 16.2 需要继续改进
 
@@ -583,6 +637,9 @@ src-tauri/target/release/bundle/msi/CouchAxis_0.1.0_x64_en-US.msi
 - 图片适应、平移边界和漫画起点。
 - 页面级手柄帮助映射。
 - 路径、格式化和国际化。
+- 最近视频进度的三项上限、完成清理、排序和路径去重。
+- 应用绑定的路径去重与移除。
+- 退出/关机长按阈值和进度限制。
 
 Rust 单元测试覆盖：
 
@@ -592,6 +649,8 @@ Rust 单元测试覆盖：
 - 内置封面 Data URL 编码。
 - 截图文件名清理与 PNG 写入。
 - 旧偏好格式升级。
+- `.exe` 识别、应用选择目录过滤和排序。
+- Windows 关机命令不包含强制关闭参数。
 
 ### 18.2 必须人工验证
 

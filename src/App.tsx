@@ -1,6 +1,7 @@
 import { ChevronLeft, Gamepad2, LayoutGrid, List, Monitor, RefreshCw, Star, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brand } from "./components/Brand";
+import { ApplicationPicker, type ApplicationPickerItem } from "./components/ApplicationPicker";
 import { ControllerHelpOverlay } from "./components/ControllerHelpOverlay";
 import { DriveRail } from "./components/DriveRail";
 import { FileList } from "./components/FileList";
@@ -14,15 +15,21 @@ import { useGamepad } from "./hooks/useGamepad";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { I18nProvider, translate } from "./i18n";
 import { displayPath } from "./lib/format";
+import { holdProgress } from "./lib/holdAction";
+import { bindApplicationShortcut, removeApplicationShortcut } from "./lib/applicationShortcuts";
 import { directoryName } from "./lib/paths";
 import type { ControllerHelpContext } from "./lib/controllerHelp";
 import { parseSubtitles } from "./lib/subtitles";
+import { resumablePosition, updateRecentVideoProgress } from "./lib/videoProgress";
 import {
   DEFAULT_PREFERENCES,
+  exitApplication,
   findMatchingSubtitle,
   getLastPath,
   getPreferences,
   isAppFullscreen,
+  launchApplication,
+  listApplicationDirectory,
   listAudioQueue,
   listDirectory,
   listRoots,
@@ -32,12 +39,14 @@ import {
   saveLastPath,
   savePreferences,
   setAppFullscreen,
+  shutdownSystem,
   mediaSource,
 } from "./services/desktop";
 import type {
   AppAction,
   AppLanguage,
   AppPreferences,
+  ApplicationDirectoryListing,
   AudioMetadata,
   AudioPlaybackMode,
   BrowserViewMode,
@@ -48,6 +57,7 @@ import type {
   StartupView,
   SubtitleCue,
   SubtitleDirectoryListing,
+  SystemAction,
 } from "./types";
 
 const EMPTY_AUDIO_METADATA: AudioMetadata = {
@@ -77,8 +87,17 @@ export function App() {
   const [folderPickerSelectedIndex, setFolderPickerSelectedIndex] = useState(0);
   const [folderPickerLoading, setFolderPickerLoading] = useState(false);
   const [folderPickerError, setFolderPickerError] = useState("");
+  const [applicationPickerOpen, setApplicationPickerOpen] = useState(false);
+  const [applicationPickerPath, setApplicationPickerPath] = useState("");
+  const [applicationPickerListing, setApplicationPickerListing] = useState<ApplicationDirectoryListing | null>(null);
+  const [applicationPickerSelectedIndex, setApplicationPickerSelectedIndex] = useState(0);
+  const [applicationPickerLoading, setApplicationPickerLoading] = useState(false);
+  const [applicationPickerError, setApplicationPickerError] = useState("");
+  const [applicationLaunchError, setApplicationLaunchError] = useState("");
   const [browserRegion, setBrowserRegion] = useState<"navigation" | "files">("files");
   const [navigationIndex, setNavigationIndex] = useState(0);
+  const [systemHoldAction, setSystemHoldAction] = useState<SystemAction | null>(null);
+  const [systemHoldProgress, setSystemHoldProgress] = useState(0);
   const [roots, setRoots] = useState<RootEntry[]>([]);
   const [listing, setListing] = useState<DirectoryListing | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -108,11 +127,59 @@ export function App() {
   const audioQueueRequestRef = useRef(0);
   const subtitleAutoRequestRef = useRef(0);
   const folderPickerRequestRef = useRef(0);
+  const applicationPickerRequestRef = useRef(0);
+  const applicationLaunchErrorTimerRef = useRef<number | null>(null);
+  const systemHoldActionRef = useRef<SystemAction | null>(null);
+  const systemHoldStartedAtRef = useRef(0);
+  const systemHoldFrameRef = useRef<number | null>(null);
   const t = useCallback(
     (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) =>
       translate(preferences.language, key, values),
     [preferences.language],
   );
+
+  const cancelSystemHold = useCallback(() => {
+    if (systemHoldFrameRef.current !== null) cancelAnimationFrame(systemHoldFrameRef.current);
+    systemHoldFrameRef.current = null;
+    systemHoldActionRef.current = null;
+    setSystemHoldAction(null);
+    setSystemHoldProgress(0);
+  }, []);
+
+  const runSystemAction = useCallback(async (action: SystemAction) => {
+    if (action === "exit") await exitApplication();
+    else await shutdownSystem();
+  }, []);
+
+  const beginSystemHold = useCallback((action: SystemAction) => {
+    if (systemHoldActionRef.current === action) return;
+    cancelSystemHold();
+    systemHoldActionRef.current = action;
+    systemHoldStartedAtRef.current = performance.now();
+    setSystemHoldAction(action);
+    setSystemHoldProgress(0);
+
+    const update = (currentTime: number) => {
+      if (systemHoldActionRef.current !== action) return;
+      const progress = holdProgress(systemHoldStartedAtRef.current, currentTime);
+      setSystemHoldProgress(progress);
+      if (progress < 1) {
+        systemHoldFrameRef.current = requestAnimationFrame(update);
+        return;
+      }
+      systemHoldFrameRef.current = null;
+      systemHoldActionRef.current = null;
+      void runSystemAction(action).catch(cancelSystemHold);
+    };
+    systemHoldFrameRef.current = requestAnimationFrame(update);
+  }, [cancelSystemHold, runSystemAction]);
+
+  useEffect(() => () => {
+    if (systemHoldFrameRef.current !== null) cancelAnimationFrame(systemHoldFrameRef.current);
+    if (applicationLaunchErrorTimerRef.current !== null) {
+      window.clearTimeout(applicationLaunchErrorTimerRef.current);
+    }
+  }, []);
 
   const browseWithVisibility = useCallback(async (
     path: string,
@@ -325,18 +392,109 @@ export function App() {
     void browseScreenshotFolders(item.path);
   }, [browseScreenshotFolders, closeScreenshotDirectoryPicker]);
 
+  const browseApplications = useCallback(async (path: string) => {
+    const requestId = ++applicationPickerRequestRef.current;
+    setApplicationPickerPath(path);
+    setApplicationPickerSelectedIndex(0);
+    setApplicationPickerError("");
+    if (!path) {
+      setApplicationPickerListing(null);
+      setApplicationPickerLoading(false);
+      return;
+    }
+    setApplicationPickerLoading(true);
+    try {
+      const result = await listApplicationDirectory(path, preferences.showHiddenFiles);
+      if (applicationPickerRequestRef.current === requestId) setApplicationPickerListing(result);
+    } catch (reason) {
+      if (applicationPickerRequestRef.current !== requestId) return;
+      const failure = reason as { message?: string };
+      setApplicationPickerListing(null);
+      setApplicationPickerError(failure.message ?? String(reason));
+    } finally {
+      if (applicationPickerRequestRef.current === requestId) setApplicationPickerLoading(false);
+    }
+  }, [preferences.showHiddenFiles]);
+
+  const applicationPickerItems = useMemo<ApplicationPickerItem[]>(() => {
+    if (!applicationPickerPath) {
+      return roots.map((root) => ({ name: root.name, path: root.path, kind: "root" }));
+    }
+    return applicationPickerListing?.entries ?? [];
+  }, [applicationPickerListing, applicationPickerPath, roots]);
+
+  const openApplicationPicker = useCallback(() => {
+    setApplicationPickerOpen(true);
+    void browseApplications("");
+  }, [browseApplications]);
+
+  const closeApplicationPicker = useCallback(() => {
+    applicationPickerRequestRef.current += 1;
+    setApplicationPickerOpen(false);
+    setApplicationPickerError("");
+  }, []);
+
+  const goBackInApplicationPicker = useCallback(() => {
+    if (!applicationPickerPath) {
+      closeApplicationPicker();
+    } else if (applicationPickerListing?.parent) {
+      void browseApplications(applicationPickerListing.parent);
+    } else {
+      void browseApplications("");
+    }
+  }, [applicationPickerListing?.parent, applicationPickerPath, browseApplications, closeApplicationPicker]);
+
+  const activateApplicationPickerItem = useCallback((item: ApplicationPickerItem) => {
+    if (item.kind !== "application") {
+      void browseApplications(item.path);
+      return;
+    }
+    setPreferences((current) => ({
+      ...current,
+      applicationShortcuts: bindApplicationShortcut(current.applicationShortcuts, {
+        name: item.name.replace(/\.exe$/i, ""),
+        path: item.path,
+      }),
+    }));
+    closeApplicationPicker();
+  }, [browseApplications, closeApplicationPicker]);
+
+  const removeBoundApplication = useCallback((path: string) => {
+    setPreferences((current) => ({
+      ...current,
+      applicationShortcuts: removeApplicationShortcut(current.applicationShortcuts, path),
+    }));
+  }, []);
+
+  const showApplicationLaunchFailure = useCallback((reason: unknown) => {
+    const failure = reason as { message?: string };
+    setApplicationLaunchError(t("applications.launchFailed", { message: failure.message ?? String(reason) }));
+    if (applicationLaunchErrorTimerRef.current !== null) {
+      window.clearTimeout(applicationLaunchErrorTimerRef.current);
+    }
+    applicationLaunchErrorTimerRef.current = window.setTimeout(() => setApplicationLaunchError(""), 4200);
+  }, [t]);
+
+  const launchBoundApplication = useCallback((path: string) => {
+    void launchApplication(path).catch(showApplicationLaunchFailure);
+  }, [showApplicationLaunchFailure]);
+
+  const applicationStartIndex = roots.length + preferences.favoriteFolders.length;
+  const bindApplicationIndex = applicationStartIndex + preferences.applicationShortcuts.length;
+  const settingsIndex = bindApplicationIndex + 1;
+
   const openSettings = useCallback(() => {
     setSettingsOpen(true);
     setBrowserRegion("navigation");
-    setNavigationIndex(roots.length + preferences.favoriteFolders.length);
-  }, [preferences.favoriteFolders.length, roots.length]);
+    setNavigationIndex(settingsIndex);
+  }, [settingsIndex]);
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     setBrowserRegion("navigation");
   }, []);
 
-  const navigationCount = roots.length + preferences.favoriteFolders.length + 1;
+  const navigationCount = settingsIndex + 3;
 
   useEffect(() => {
     setNavigationIndex((index) => Math.min(Math.max(0, navigationCount - 1), index));
@@ -349,13 +507,33 @@ export function App() {
       return;
     }
     const favoriteIndex = index - roots.length;
-    if (favoriteIndex < preferences.favoriteFolders.length) {
+    if (favoriteIndex >= 0 && favoriteIndex < preferences.favoriteFolders.length) {
       setSettingsOpen(false);
       void browse(preferences.favoriteFolders[favoriteIndex].path);
       return;
     }
-    openSettings();
-  }, [browse, openSettings, preferences.favoriteFolders, roots]);
+    const applicationIndex = index - applicationStartIndex;
+    if (applicationIndex >= 0 && applicationIndex < preferences.applicationShortcuts.length) {
+      launchBoundApplication(preferences.applicationShortcuts[applicationIndex].path);
+      return;
+    }
+    if (index === bindApplicationIndex) {
+      openApplicationPicker();
+      return;
+    }
+    if (index === settingsIndex) openSettings();
+  }, [
+    applicationStartIndex,
+    bindApplicationIndex,
+    browse,
+    launchBoundApplication,
+    openApplicationPicker,
+    openSettings,
+    preferences.applicationShortcuts,
+    preferences.favoriteFolders,
+    roots,
+    settingsIndex,
+  ]);
 
   const openEntry = useCallback((entry: FileEntry) => {
     if (entry.kind === "folder") void browse(entry.path);
@@ -491,6 +669,33 @@ export function App() {
     [audioQueue, listing, media],
   );
   const mediaPosition = Math.max(0, relatedMedia.findIndex((entry) => entry.path === media?.path)) + 1;
+  const currentVideoResumePosition = useMemo(() => {
+    if (!media || media.kind !== "video") return 0;
+    const entry = preferences.recentVideoProgress.find(
+      (progress) => progress.path.toLowerCase() === media.path.toLowerCase(),
+    );
+    return resumablePosition(entry);
+  }, [media, preferences.recentVideoProgress]);
+
+  const recordVideoProgress = useCallback((path: string, positionSeconds: number, durationSeconds: number) => {
+    setPreferences((current) => {
+      const recentVideoProgress = updateRecentVideoProgress(
+        current.recentVideoProgress,
+        path,
+        positionSeconds,
+        durationSeconds,
+      );
+      const unchanged = recentVideoProgress.length === current.recentVideoProgress.length
+        && recentVideoProgress.every((entry, index) => {
+          const previous = current.recentVideoProgress[index];
+          return previous
+            && entry.path === previous.path
+            && entry.positionSeconds === previous.positionSeconds
+            && entry.durationSeconds === previous.durationSeconds;
+        });
+      return unchanged ? current : { ...current, recentVideoProgress };
+    });
+  }, []);
 
   const navigateMedia = useCallback((direction: -1 | 1) => {
     if (!media) return;
@@ -585,6 +790,8 @@ export function App() {
 
   const controllerHelpContext: ControllerHelpContext = subtitlePickerOpen
     ? "subtitle"
+    : applicationPickerOpen
+      ? "application"
     : folderPickerOpen
       ? "folder"
     : media?.kind === "video"
@@ -599,20 +806,42 @@ export function App() {
 
   const handleBrowserFavoriteAction = useCallback(() => {
     const favoriteIndex = navigationIndex - roots.length;
+    const applicationIndex = navigationIndex - applicationStartIndex;
     const selectedFavorite = browserRegion === "navigation"
       && favoriteIndex >= 0
       && favoriteIndex < preferences.favoriteFolders.length
       ? preferences.favoriteFolders[favoriteIndex]
       : null;
+    const selectedApplication = browserRegion === "navigation"
+      && applicationIndex >= 0
+      && applicationIndex < preferences.applicationShortcuts.length
+      ? preferences.applicationShortcuts[applicationIndex]
+      : null;
     if (selectedFavorite) removeFavorite(selectedFavorite.path);
+    else if (selectedApplication) removeBoundApplication(selectedApplication.path);
     else toggleCurrentFavorite();
-  }, [browserRegion, navigationIndex, preferences.favoriteFolders, removeFavorite, roots.length, toggleCurrentFavorite]);
+  }, [
+    applicationStartIndex,
+    browserRegion,
+    navigationIndex,
+    preferences.applicationShortcuts,
+    preferences.favoriteFolders,
+    removeBoundApplication,
+    removeFavorite,
+    roots.length,
+    toggleCurrentFavorite,
+  ]);
 
   useEffect(() => {
     setControllerHelpOpen(false);
   }, [controllerHelpContext]);
 
   const handleAction = useCallback((action: AppAction) => {
+    if (action === "confirmRelease") {
+      cancelSystemHold();
+      return;
+    }
+    if (systemHoldActionRef.current && action !== "confirm") cancelSystemHold();
     if (action === "zoomStop" && media?.kind === "image") {
       imageViewerRef.current?.stopZoom();
       return;
@@ -634,6 +863,17 @@ export function App() {
     }
     if (controllerHelpOpen) {
       if (action === "back" || action === "confirm") setControllerHelpOpen(false);
+      return;
+    }
+    if (applicationPickerOpen) {
+      if (action === "back") goBackInApplicationPicker();
+      else if (action === "up") setApplicationPickerSelectedIndex((index) => Math.max(0, index - 1));
+      else if (action === "down") {
+        setApplicationPickerSelectedIndex((index) => Math.min(Math.max(0, applicationPickerItems.length - 1), index + 1));
+      } else if (action === "confirm") {
+        const item = applicationPickerItems[applicationPickerSelectedIndex];
+        if (item) activateApplicationPickerItem(item);
+      }
       return;
     }
     if (folderPickerOpen) {
@@ -749,7 +989,11 @@ export function App() {
         setSelectedIndex((index) => Math.min(Math.max(0, (listing?.entries.length ?? 1) - 1), index + step));
       }
     } else if (action === "confirm") {
-      if (browserRegion === "navigation") activateNavigation(navigationIndex);
+      if (browserRegion === "navigation") {
+        if (navigationIndex === settingsIndex + 1) beginSystemHold("exit");
+        else if (navigationIndex === settingsIndex + 2) beginSystemHold("shutdown");
+        else activateNavigation(navigationIndex);
+      }
       else {
         const entry = listing?.entries[selectedIndex];
         if (entry) openEntry(entry);
@@ -763,18 +1007,25 @@ export function App() {
         .catch(() => undefined);
     }
   }, [
+    activateApplicationPickerItem,
     activateSubtitleItem,
     activateNavigation,
     activateFolderPickerItem,
     adjustSelectedSetting,
+    applicationPickerItems,
+    applicationPickerOpen,
+    applicationPickerSelectedIndex,
+    beginSystemHold,
     browserGridColumns,
     browserRegion,
     controllerHelpOpen,
     closeSubtitlePicker,
     closeSettings,
+    cancelSystemHold,
     folderPickerItems,
     folderPickerOpen,
     folderPickerSelectedIndex,
+    goBackInApplicationPicker,
     goBackInFolderPicker,
     goBack,
     handleBrowserFavoriteAction,
@@ -789,6 +1040,7 @@ export function App() {
     openScreenshotDirectoryPicker,
     openSubtitlePicker,
     preferences.browserViewMode,
+    settingsIndex,
     selectedIndex,
     subtitleItems,
     subtitlePickerOpen,
@@ -872,8 +1124,12 @@ export function App() {
           subtitleName={subtitleName}
           subtitleCues={subtitleCues}
           screenshotDirectory={preferences.screenshotDirectory}
+          resumePosition={currentVideoResumePosition}
           onClose={goBack}
           onPickSubtitle={openSubtitlePicker}
+          onProgressChange={(positionSeconds, durationSeconds) => {
+            recordVideoProgress(media.path, positionSeconds, durationSeconds);
+          }}
         />
         {subtitlePickerOpen && (
           <SubtitlePicker
@@ -915,21 +1171,31 @@ export function App() {
         <DriveRail
           roots={roots}
           favorites={preferences.favoriteFolders}
+          applications={preferences.applicationShortcuts}
           currentPath={listing?.path ?? ""}
           selectedIndex={navigationIndex}
           focused={browserRegion === "navigation"}
           settingsActive={settingsOpen}
+          systemHoldAction={systemHoldAction}
+          systemHoldProgress={systemHoldProgress}
           onSelectIndex={(index) => {
+            if (index !== navigationIndex) cancelSystemHold();
             setNavigationIndex(index);
             setBrowserRegion("navigation");
           }}
           onSelectPath={(path) => {
+            cancelSystemHold();
             setSettingsOpen(false);
             setBrowserRegion("navigation");
             void browse(path);
           }}
           onRemoveFavorite={removeFavorite}
+          onLaunchApplication={launchBoundApplication}
+          onRemoveApplication={removeBoundApplication}
+          onBindApplication={openApplicationPicker}
           onOpenSettings={openSettings}
+          onSystemHoldStart={beginSystemHold}
+          onSystemHoldCancel={cancelSystemHold}
         />
         <main className={settingsOpen ? "browser-main settings-main" : "browser-main"}>
           {settingsOpen ? (
@@ -1022,6 +1288,23 @@ export function App() {
         onClose={closeScreenshotDirectoryPicker}
         onRetry={() => void browseScreenshotFolders(folderPickerPath)}
       />
+    )}
+    {applicationPickerOpen && (
+      <ApplicationPicker
+        path={applicationPickerPath}
+        items={applicationPickerItems}
+        selectedIndex={applicationPickerSelectedIndex}
+        loading={applicationPickerLoading}
+        error={applicationPickerError}
+        onSelect={setApplicationPickerSelectedIndex}
+        onActivate={activateApplicationPickerItem}
+        onBack={goBackInApplicationPicker}
+        onClose={closeApplicationPicker}
+        onRetry={() => void browseApplications(applicationPickerPath)}
+      />
+    )}
+    {applicationLaunchError && (
+      <div className="application-launch-error" role="status">{applicationLaunchError}</div>
     )}
     {controllerHelpOpen && (
       <ControllerHelpOverlay

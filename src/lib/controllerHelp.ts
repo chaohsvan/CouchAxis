@@ -1,6 +1,6 @@
 import type { TranslationKey } from "../i18n";
 
-export type ControllerHelpContext = "browser" | "settings" | "folder" | "video" | "audio" | "image" | "subtitle";
+export type ControllerHelpContext = "browser" | "settings" | "folder" | "application" | "video" | "audio" | "image" | "subtitle";
 
 export type ControllerHelpControl =
   | "vertical"
@@ -56,6 +56,12 @@ export const CONTROLLER_HELP_ITEMS: Record<ControllerHelpContext, ControllerHelp
     { controls: ["vertical"], description: "help.action.moveSelection" },
     { controls: ["confirm"], description: "help.action.openOrChooseFolder" },
     { controls: ["back"], description: "help.action.parentOrClose" },
+    sharedHelp,
+  ],
+  application: [
+    { controls: ["vertical"], description: "help.action.moveSelection" },
+    { controls: ["confirm"], description: "help.action.openOrBindApplication" },
+    { controls: ["back"], description: "help.action.closeApplicationPicker" },
     sharedHelp,
   ],
   video: [

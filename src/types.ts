@@ -25,10 +25,23 @@ export type StartupView = "lastPath" | "drives" | "favorites";
 export type AppLanguage = "zh-CN" | "en-US";
 export type MangaStartSide = "left" | "right";
 export type BrowserViewMode = "list" | "grid";
+export type SystemAction = "exit" | "shutdown";
 
 export interface FavoriteFolder {
   name: string;
   path: string;
+}
+
+export interface ApplicationShortcut {
+  name: string;
+  path: string;
+}
+
+export interface RecentVideoProgress {
+  path: string;
+  positionSeconds: number;
+  durationSeconds: number;
+  updatedAt: number;
 }
 
 export interface AppPreferences {
@@ -36,6 +49,8 @@ export interface AppPreferences {
   language: AppLanguage;
   showHiddenFiles: boolean;
   favoriteFolders: FavoriteFolder[];
+  applicationShortcuts: ApplicationShortcut[];
+  recentVideoProgress: RecentVideoProgress[];
   screenshotDirectory: string;
   mangaStartSide: MangaStartSide;
   browserViewMode: BrowserViewMode;
@@ -71,6 +86,20 @@ export interface SubtitleDirectoryListing {
   entries: SubtitleEntry[];
 }
 
+export type ApplicationEntryKind = "folder" | "application";
+
+export interface ApplicationEntry {
+  name: string;
+  path: string;
+  kind: ApplicationEntryKind;
+}
+
+export interface ApplicationDirectoryListing {
+  path: string;
+  parent: string | null;
+  entries: ApplicationEntry[];
+}
+
 export interface SubtitleCue {
   start: number;
   end: number;
@@ -83,6 +112,7 @@ export type AppAction =
   | "left"
   | "right"
   | "confirm"
+  | "confirmRelease"
   | "back"
   | "togglePlayback"
   | "seekBackward"

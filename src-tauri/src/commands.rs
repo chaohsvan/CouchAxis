@@ -2,8 +2,8 @@ use crate::{
     error::CommandError,
     filesystem,
     models::{
-        AppPreferences, AudioMetadata, DirectoryListing, FileEntry, RootEntry,
-        SubtitleDirectoryListing, SubtitleFile,
+        AppPreferences, ApplicationDirectoryListing, AudioMetadata, DirectoryListing, FileEntry,
+        RootEntry, SubtitleDirectoryListing, SubtitleFile,
     },
     platform, preferences,
 };
@@ -28,8 +28,62 @@ const MAX_COVER_ART_BYTES: usize = 16 * 1024 * 1024;
 const PNG_SIGNATURE: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 
 #[tauri::command]
+pub fn exit_application(app: AppHandle) {
+    app.exit(0);
+}
+
+#[tauri::command]
+pub async fn shutdown_system() -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(platform::shutdown_system)
+        .await
+        .map_err(task_error)?
+        .map_err(|source| CommandError {
+            code: "shutdown_failed",
+            message: format!("无法关闭系统: {source}"),
+        })
+}
+
+#[tauri::command]
 pub fn list_roots() -> Vec<RootEntry> {
     platform::system_roots()
+}
+
+#[tauri::command]
+pub async fn list_application_directory(
+    path: String,
+    show_hidden_files: bool,
+) -> Result<ApplicationDirectoryListing, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        filesystem::read_application_directory(Path::new(&path), show_hidden_files)
+            .map_err(Into::into)
+    })
+    .await
+    .map_err(task_error)?
+}
+
+#[tauri::command]
+pub async fn launch_application(path: String) -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let requested = PathBuf::from(path);
+        if !filesystem::is_executable_path(&requested) {
+            return Err(CommandError {
+                code: "unsupported_application",
+                message: "只能绑定 Windows .exe 应用程序".into(),
+            });
+        }
+        let canonical = std::fs::canonicalize(&requested)
+            .map_err(|source| crate::error::AppError::io(&requested, source))?;
+        if !canonical.is_file() {
+            return Err(CommandError {
+                code: "application_not_found",
+                message: "应用程序文件不存在".into(),
+            });
+        }
+        platform::launch_application(&canonical)
+            .map_err(|source| crate::error::AppError::io(&canonical, source).into())
+    })
+    .await
+    .map_err(task_error)?
 }
 
 #[tauri::command]

@@ -105,5 +105,7 @@ mod tests {
             preferences.app.browser_view_mode,
             crate::models::BrowserViewMode::List
         );
+        assert!(preferences.app.application_shortcuts.is_empty());
+        assert!(preferences.app.recent_video_progress.is_empty());
     }
 }

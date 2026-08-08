@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Focus,
+  Gauge,
   Maximize,
   Minus,
   Pause,
@@ -55,12 +56,28 @@ interface PlayerProps {
   subtitleName: string;
   subtitleCues: SubtitleCue[];
   screenshotDirectory: string;
+  resumePosition: number;
   onClose: () => void;
   onPickSubtitle: () => void;
+  onProgressChange: (positionSeconds: number, durationSeconds: number) => void;
 }
 
+type PlaybackOsd =
+  | { kind: "volume"; value: number; muted: boolean }
+  | { kind: "speed"; value: number };
+
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
-  { media, source, subtitleName, subtitleCues, screenshotDirectory, onClose, onPickSubtitle },
+  {
+    media,
+    source,
+    subtitleName,
+    subtitleCues,
+    screenshotDirectory,
+    resumePosition,
+    onClose,
+    onPickSubtitle,
+    onProgressChange,
+  },
   ref,
 ) {
   const { t } = useI18n();
@@ -75,12 +92,39 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(true);
   const [subtitleText, setSubtitleText] = useState("");
   const [playbackError, setPlaybackError] = useState(false);
+  const [playbackOsd, setPlaybackOsd] = useState<PlaybackOsd | null>(null);
   const [screenshotNotice, setScreenshotNotice] = useState<{ success: boolean; message: string } | null>(null);
+  const playbackOsdTimerRef = useRef<number | null>(null);
+  const progressRef = useRef({ position: 0, duration: 0 });
+  const progressCallbackRef = useRef(onProgressChange);
+  const lastProgressReportAtRef = useRef(0);
   const screenshotNoticeTimerRef = useRef<number | null>(null);
   const focusRequestedFullscreenRef = useRef(false);
   const focusModeRef = useRef(false);
   const fullscreenTransitionRef = useRef(false);
   const [focusMode, setFocusMode] = useState(false);
+  progressCallbackRef.current = onProgressChange;
+
+  const reportProgress = () => {
+    const { position, duration: videoDuration } = progressRef.current;
+    if (videoDuration > 0) progressCallbackRef.current(position, videoDuration);
+  };
+
+  const commitPlaybackOsd = (notice: PlaybackOsd) => {
+    setPlaybackOsd(notice);
+    if (playbackOsdTimerRef.current !== null) window.clearTimeout(playbackOsdTimerRef.current);
+    playbackOsdTimerRef.current = window.setTimeout(() => setPlaybackOsd(null), 1400);
+  };
+
+  const showFullscreenOsd = (notice: PlaybackOsd) => {
+    if (focusModeRef.current) {
+      commitPlaybackOsd(notice);
+      return;
+    }
+    void isAppFullscreen()
+      .then((fullscreen) => { if (fullscreen) commitPlaybackOsd(notice); })
+      .catch(() => undefined);
+  };
 
   const togglePlayback = () => {
     const video = videoRef.current;
@@ -102,24 +146,28 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     video.muted = false;
     setMuted(false);
     setVolume(next);
+    showFullscreenOsd({ kind: "volume", value: next, muted: false });
   };
   const toggleMute = () => {
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
     setMuted(video.muted);
+    showFullscreenOsd({ kind: "volume", value: video.volume, muted: video.muted });
   };
   const toggleSubtitles = () => setSubtitlesEnabled((enabled) => !enabled);
   const changePlaybackRate = (direction: -1 | 1) => {
     setPlaybackRate((current) => {
       const next = stepPlaybackRate(current, direction);
       if (videoRef.current) videoRef.current.playbackRate = next;
+      showFullscreenOsd({ kind: "speed", value: next });
       return next;
     });
   };
   const resetPlaybackRate = () => {
     if (videoRef.current) videoRef.current.playbackRate = 1;
     setPlaybackRate(1);
+    showFullscreenOsd({ kind: "speed", value: 1 });
   };
   const toggleFullscreen = () => {
     if (fullscreenTransitionRef.current) return;
@@ -213,6 +261,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
 
   useEffect(() => () => {
     focusModeRef.current = false;
+    reportProgress();
+    if (playbackOsdTimerRef.current !== null) window.clearTimeout(playbackOsdTimerRef.current);
     if (screenshotNoticeTimerRef.current !== null) window.clearTimeout(screenshotNoticeTimerRef.current);
     if (focusRequestedFullscreenRef.current) void setAppFullscreen(false).catch(() => undefined);
   }, []);
@@ -246,19 +296,46 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
             src={source || undefined}
             autoPlay={Boolean(source)}
             onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
+            onPause={() => {
+              setPlaying(false);
+              reportProgress();
+            }}
             onTimeUpdate={(event) => {
               const time = event.currentTarget.currentTime;
+              const videoDuration = event.currentTarget.duration || duration;
+              progressRef.current = { position: time, duration: videoDuration };
               setCurrentTime(time);
               syncSubtitleAt(time);
+              const now = Date.now();
+              if (now - lastProgressReportAtRef.current >= 10_000) {
+                lastProgressReportAtRef.current = now;
+                reportProgress();
+              }
             }}
-            onDurationChange={(event) => setDuration(event.currentTarget.duration)}
+            onDurationChange={(event) => {
+              const videoDuration = event.currentTarget.duration;
+              progressRef.current.duration = videoDuration;
+              setDuration(videoDuration);
+            }}
             onLoadedMetadata={(event) => {
               const video = event.currentTarget;
               video.playbackRate = playbackRate;
+              progressRef.current.duration = video.duration;
+              if (resumePosition >= 5 && resumePosition < video.duration - 15) {
+                video.currentTime = resumePosition;
+                progressRef.current.position = resumePosition;
+                setCurrentTime(resumePosition);
+              }
               if (video.videoWidth > 0 && video.videoHeight > 0) {
                 setVideoAspectRatio(video.videoWidth / video.videoHeight);
               }
+            }}
+            onEnded={(event) => {
+              progressRef.current = {
+                position: event.currentTarget.duration,
+                duration: event.currentTarget.duration,
+              };
+              reportProgress();
             }}
             onRateChange={(event) => setPlaybackRate(event.currentTarget.playbackRate)}
             onVolumeChange={(event) => {
@@ -272,6 +349,21 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       {!source && <div className="player-placeholder"><FilmMark /><strong>{media.name}</strong><span>{t("player.localPreview")}</span></div>}
       {playbackError && <div className="player-error"><strong>{t("player.videoDecodeFailed")}</strong><span>{t("player.videoUnsupported")}</span></div>}
       {subtitleText && <div className="subtitle-overlay">{subtitleText}</div>}
+      {playbackOsd && (
+        <div className={`player-osd ${playbackOsd.kind}`} role="status" aria-live="polite">
+          {playbackOsd.kind === "speed" ? <Gauge aria-hidden="true" /> : <VolumeIcon aria-hidden="true" />}
+          <strong>
+            {playbackOsd.kind === "speed"
+              ? t("player.speedOsd", { value: playbackOsd.value })
+              : playbackOsd.muted
+                ? t("player.mutedOsd")
+                : t("player.volumeOsd", { value: Math.round(playbackOsd.value * 100) })}
+          </strong>
+          {playbackOsd.kind === "volume" && (
+            <span className="player-osd-meter"><i style={{ width: `${playbackOsd.muted ? 0 : playbackOsd.value * 100}%` }} /></span>
+          )}
+        </div>
+      )}
       {screenshotNotice && (
         <div className={screenshotNotice.success ? "screenshot-notice success" : "screenshot-notice error"} role="status">
           {screenshotNotice.success ? <CheckCircle2 aria-hidden="true" /> : <CircleAlert aria-hidden="true" />}
@@ -280,7 +372,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       )}
 
       {!focusMode && <div className="player-topbar">
-        <button type="button" className="icon-button" onClick={onClose} title={t("player.close")}><X aria-hidden="true" /></button>
+        <button type="button" className="icon-button" onClick={() => { reportProgress(); onClose(); }} title={t("player.close")}><X aria-hidden="true" /></button>
         <div><strong>{media.name}</strong><span>{subtitleName || t("player.noSubtitle")}</span></div>
       </div>}
 

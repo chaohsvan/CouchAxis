@@ -4,6 +4,6 @@ mod unix;
 mod windows;
 
 #[cfg(not(windows))]
-pub use unix::system_roots;
+pub use unix::{launch_application, shutdown_system, system_roots};
 #[cfg(windows)]
-pub use windows::system_roots;
+pub use windows::{launch_application, shutdown_system, system_roots};

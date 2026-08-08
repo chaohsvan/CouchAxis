@@ -6,16 +6,21 @@ mod platform;
 mod preferences;
 
 use commands::{
-    find_matching_subtitle, get_last_path, get_preferences, list_audio_queue, list_directory,
-    list_roots, list_subtitle_directory, read_audio_metadata, read_subtitle, save_last_path,
-    save_preferences, save_screenshot,
+    exit_application, find_matching_subtitle, get_last_path, get_preferences, launch_application,
+    list_application_directory, list_audio_queue, list_directory, list_roots,
+    list_subtitle_directory, read_audio_metadata, read_subtitle, save_last_path, save_preferences,
+    save_screenshot, shutdown_system,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            exit_application,
+            shutdown_system,
             list_roots,
+            list_application_directory,
+            launch_application,
             list_directory,
             list_audio_queue,
             read_audio_metadata,

@@ -32,9 +32,19 @@ export function useKeyboard(onAction: (action: AppAction) => void): void {
       const action = KEY_ACTIONS[event.key];
       if (!action) return;
       event.preventDefault();
+      if (event.key === "Enter" && event.repeat) return;
       callbackRef.current(action);
     };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      callbackRef.current("confirmRelease");
+    };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, []);
 }

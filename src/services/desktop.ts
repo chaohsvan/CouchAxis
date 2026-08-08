@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type {
   AppPreferences,
+  ApplicationDirectoryListing,
   AudioMetadata,
   DirectoryListing,
   FileEntry,
@@ -16,6 +17,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   language: "zh-CN",
   showHiddenFiles: false,
   favoriteFolders: [],
+  applicationShortcuts: [],
+  recentVideoProgress: [],
   screenshotDirectory: "D:\\Pictures\\CouchAxis Screenshots",
   mangaStartSide: "left",
   browserViewMode: "list",
@@ -98,6 +101,19 @@ export async function setAppFullscreen(fullscreen: boolean): Promise<void> {
   else if (!fullscreen && document.fullscreenElement) await document.exitFullscreen();
 }
 
+export async function exitApplication(): Promise<void> {
+  if (isDesktop()) {
+    await invoke("exit_application");
+    return;
+  }
+  window.close();
+}
+
+export async function shutdownSystem(): Promise<void> {
+  if (!isDesktop()) throw new Error("System shutdown is only available in the desktop app");
+  await invoke("shutdown_system");
+}
+
 export async function listRoots(): Promise<RootEntry[]> {
   if (isDesktop()) return invoke<RootEntry[]>("list_roots");
   return [
@@ -120,6 +136,28 @@ export async function listAudioQueue(path: string, showHiddenFiles = false): Pro
   if (isDesktop()) return invoke<FileEntry[]>("list_audio_queue", { path, showHiddenFiles });
   await new Promise((resolve) => window.setTimeout(resolve, 180));
   return path === "D:\\Movies" ? demoAudioQueue : demoAudioQueue.filter((entry) => entry.path.startsWith(path));
+}
+
+export async function listApplicationDirectory(
+  path: string,
+  showHiddenFiles = false,
+): Promise<ApplicationDirectoryListing> {
+  if (isDesktop()) return invoke<ApplicationDirectoryListing>("list_application_directory", { path, showHiddenFiles });
+  await new Promise((resolve) => window.setTimeout(resolve, 120));
+  return {
+    path,
+    parent: path === DEMO_ROOT ? null : DEMO_ROOT,
+    entries: [
+      { name: "Tools", path: `${path.replace(/[\\/]+$/, "")}\\Tools`, kind: "folder" },
+      { name: "Example.exe", path: `${path.replace(/[\\/]+$/, "")}\\Example.exe`, kind: "application" },
+    ],
+  };
+}
+
+export async function launchApplication(path: string): Promise<void> {
+  if (isDesktop()) {
+    await invoke("launch_application", { path });
+  }
 }
 
 export async function readAudioMetadata(path: string): Promise<AudioMetadata> {

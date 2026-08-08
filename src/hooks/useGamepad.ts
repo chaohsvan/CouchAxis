@@ -58,7 +58,14 @@ export function useGamepad(
     let frame = 0;
     let lastControllerId = "";
 
-    const emit = (key: string, pressed: boolean, action: AppAction, repeating = false, suppressed = false) => {
+    const emit = (
+      key: string,
+      pressed: boolean,
+      action: AppAction,
+      repeating = false,
+      suppressed = false,
+      releaseAction?: AppAction,
+    ) => {
       const wasPressed = pressedRef.current.get(key) ?? false;
       const now = performance.now();
       const nextRepeat = repeatRef.current.get(key) ?? 0;
@@ -66,6 +73,7 @@ export function useGamepad(
         if (!suppressed) callbackRef.current(action);
         repeatRef.current.set(key, wasPressed ? now + 110 : now + 360);
       }
+      if (!pressed && wasPressed && releaseAction) callbackRef.current(releaseAction);
       pressedRef.current.set(key, pressed);
       if (!pressed) repeatRef.current.delete(key);
     };
@@ -75,6 +83,7 @@ export function useGamepad(
       if (!gamepad) {
         if (lastControllerId) {
           if (activeZoomTriggerRef.current !== 0) callbackRef.current("zoomStop");
+          if (pressedRef.current.get("button-0")) callbackRef.current("confirmRelease");
           lastControllerId = "";
           pressedRef.current.clear();
           rawInputPressedRef.current = false;
@@ -184,6 +193,7 @@ export function useGamepad(
           action,
           action === "up" || action === "down" || action === "left" || action === "right",
           suppressActions,
+          index === 0 ? "confirmRelease" : undefined,
         );
       });
       emit("axis-up", (gamepad.axes[1] ?? 0) < -0.55, "up", true, suppressActions);
