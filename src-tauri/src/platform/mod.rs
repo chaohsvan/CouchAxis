@@ -4,6 +4,12 @@ mod unix;
 mod windows;
 
 #[cfg(not(windows))]
-pub use unix::{launch_application, shutdown_system, system_roots};
+pub use unix::{
+    configure_elevated_application, launch_application, remove_elevated_application,
+    shutdown_system, system_roots,
+};
 #[cfg(windows)]
-pub use windows::{launch_application, shutdown_system, system_roots};
+pub use windows::{
+    configure_elevated_application, launch_application, remove_elevated_application,
+    shutdown_system, system_roots,
+};

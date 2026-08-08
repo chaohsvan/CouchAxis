@@ -1,14 +1,25 @@
 use crate::models::RootEntry;
+use sha2::{Digest, Sha256};
 use std::{
+    ffi::{OsStr, OsString},
     io,
-    os::windows::ffi::OsStrExt,
+    os::windows::{ffi::OsStrExt, process::CommandExt},
     path::{Component, Path, PathBuf, Prefix},
-    process::Command,
+    process::{Command, Stdio},
     ptr,
 };
+use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
 use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+use windows_sys::Win32::System::Threading::{
+    GetExitCodeProcess, WaitForSingleObject, CREATE_NO_WINDOW, INFINITE,
+};
 use windows_sys::Win32::System::WindowsProgramming::{DRIVE_FIXED, DRIVE_REMOVABLE};
-use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+use windows_sys::Win32::UI::{
+    Shell::{ShellExecuteExW, ShellExecuteW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW},
+    WindowsAndMessaging::{SW_HIDE, SW_SHOWNORMAL},
+};
+
+const ELEVATED_TASK_PREFIX: &str = "CouchAxis-Elevated-";
 
 pub fn system_roots() -> Vec<RootEntry> {
     let drive_mask = unsafe { GetLogicalDrives() };
@@ -58,11 +69,19 @@ pub fn shutdown_system() -> io::Result<()> {
 }
 
 pub fn launch_application(path: &Path, run_as_administrator: bool) -> io::Result<()> {
+    if run_as_administrator {
+        if !elevated_task_exists(path)? {
+            configure_elevated_application(path)?;
+        }
+        return run_schtasks(&[
+            OsString::from("/Run"),
+            OsString::from("/TN"),
+            OsString::from(elevated_task_name(path)),
+        ]);
+    }
+
     let shell_path = shell_compatible_path(path);
-    let operation: Vec<u16> = shell_operation(run_as_administrator)
-        .encode_utf16()
-        .chain(Some(0))
-        .collect();
+    let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
     let file: Vec<u16> = shell_path
         .as_os_str()
         .encode_wide()
@@ -92,12 +111,173 @@ pub fn launch_application(path: &Path, run_as_administrator: bool) -> io::Result
     }
 }
 
-fn shell_operation(run_as_administrator: bool) -> &'static str {
-    if run_as_administrator {
-        "runas"
-    } else {
-        "open"
+pub fn configure_elevated_application(path: &Path) -> io::Result<()> {
+    let shell_path = shell_compatible_path(path);
+    let task_run = format!("\"{}\"", shell_path.to_string_lossy());
+    if task_run.encode_utf16().count() > 262 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "application path is too long for Windows Task Scheduler",
+        ));
     }
+    let args = vec![
+        OsString::from("/Create"),
+        OsString::from("/TN"),
+        OsString::from(elevated_task_name(&shell_path)),
+        OsString::from("/TR"),
+        OsString::from(task_run),
+        OsString::from("/SC"),
+        OsString::from("ONCE"),
+        OsString::from("/ST"),
+        OsString::from("00:00"),
+        OsString::from("/RL"),
+        OsString::from("HIGHEST"),
+        OsString::from("/IT"),
+        OsString::from("/F"),
+    ];
+    if run_schtasks(&args).is_ok() {
+        return Ok(());
+    }
+    run_schtasks_elevated(&args)
+}
+
+pub fn remove_elevated_application(path: &Path) -> io::Result<()> {
+    if !elevated_task_exists(path)? {
+        return Ok(());
+    }
+    let args = vec![
+        OsString::from("/Delete"),
+        OsString::from("/TN"),
+        OsString::from(elevated_task_name(path)),
+        OsString::from("/F"),
+    ];
+    if run_schtasks(&args).is_ok() {
+        return Ok(());
+    }
+    run_schtasks_elevated(&args)
+}
+
+fn elevated_task_exists(path: &Path) -> io::Result<bool> {
+    let status = schtasks_command(&[
+        OsString::from("/Query"),
+        OsString::from("/TN"),
+        OsString::from(elevated_task_name(path)),
+    ])
+    .status()?;
+    Ok(status.success())
+}
+
+fn elevated_task_name(path: &Path) -> String {
+    let normalized = shell_compatible_path(path).to_string_lossy().to_lowercase();
+    let digest = Sha256::digest(normalized.as_bytes());
+    let suffix: String = digest[..16]
+        .iter()
+        .map(|value| format!("{value:02x}"))
+        .collect();
+    format!("{ELEVATED_TASK_PREFIX}{suffix}")
+}
+
+fn run_schtasks(args: &[OsString]) -> io::Result<()> {
+    let status = schtasks_command(args).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "Windows Task Scheduler exited with status {status}"
+        )))
+    }
+}
+
+fn schtasks_command(args: &[OsString]) -> Command {
+    let mut command = Command::new("schtasks.exe");
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+fn run_schtasks_elevated(args: &[OsString]) -> io::Result<()> {
+    let operation = wide_null(OsStr::new("runas"));
+    let executable = wide_null(OsStr::new("schtasks.exe"));
+    let parameters = windows_command_line(args);
+    let mut execute_info = SHELLEXECUTEINFOW {
+        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS | windows_sys::Win32::UI::Shell::SEE_MASK_FLAG_NO_UI,
+        lpVerb: operation.as_ptr(),
+        lpFile: executable.as_ptr(),
+        lpParameters: parameters.as_ptr(),
+        nShow: SW_HIDE,
+        ..Default::default()
+    };
+    if unsafe { ShellExecuteExW(&mut execute_info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if execute_info.hProcess.is_null() {
+        return Err(io::Error::other(
+            "Windows did not return a process handle for elevated task setup",
+        ));
+    }
+
+    let result = (|| {
+        if unsafe { WaitForSingleObject(execute_info.hProcess, INFINITE) } != WAIT_OBJECT_0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut exit_code = 0_u32;
+        if unsafe { GetExitCodeProcess(execute_info.hProcess, &mut exit_code) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if exit_code == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::other(format!(
+                "elevated Windows Task Scheduler exited with code {exit_code}"
+            )))
+        }
+    })();
+    unsafe { CloseHandle(execute_info.hProcess) };
+    result
+}
+
+fn windows_command_line(args: &[OsString]) -> Vec<u16> {
+    let mut command_line = Vec::new();
+    for (index, argument) in args.iter().enumerate() {
+        if index > 0 {
+            command_line.push(b' ' as u16);
+        }
+        push_quoted_windows_argument(
+            &mut command_line,
+            &argument.encode_wide().collect::<Vec<_>>(),
+        );
+    }
+    command_line.push(0);
+    command_line
+}
+
+fn push_quoted_windows_argument(target: &mut Vec<u16>, argument: &[u16]) {
+    target.push(b'"' as u16);
+    let mut backslashes = 0;
+    for &character in argument {
+        if character == b'\\' as u16 {
+            backslashes += 1;
+        } else if character == b'"' as u16 {
+            target.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2 + 1));
+            target.push(character);
+            backslashes = 0;
+        } else {
+            target.extend(std::iter::repeat_n(b'\\' as u16, backslashes));
+            target.push(character);
+            backslashes = 0;
+        }
+    }
+    target.extend(std::iter::repeat_n(b'\\' as u16, backslashes * 2));
+    target.push(b'"' as u16);
+}
+
+fn wide_null(value: &OsStr) -> Vec<u16> {
+    value.encode_wide().chain(Some(0)).collect()
 }
 
 fn shell_compatible_path(path: &Path) -> PathBuf {
@@ -147,8 +327,24 @@ mod tests {
     }
 
     #[test]
-    fn selects_shell_operation_from_elevation_preference() {
-        assert_eq!(shell_operation(false), "open");
-        assert_eq!(shell_operation(true), "runas");
+    fn builds_stable_case_insensitive_elevated_task_names() {
+        let first = elevated_task_name(Path::new(r"D:\Program Files\Player.exe"));
+        let second = elevated_task_name(Path::new(r"d:\program files\PLAYER.EXE"));
+
+        assert_eq!(first, second);
+        assert!(first.starts_with(ELEVATED_TASK_PREFIX));
+        assert_eq!(first.len(), ELEVATED_TASK_PREFIX.len() + 32);
+    }
+
+    #[test]
+    fn quotes_task_scheduler_arguments_for_shell_execute() {
+        let args = vec![
+            OsString::from("/TR"),
+            OsString::from(r#""D:\Program Files\Player.exe""#),
+        ];
+        let encoded = windows_command_line(&args);
+        let decoded = String::from_utf16_lossy(&encoded[..encoded.len() - 1]);
+
+        assert_eq!(decoded, r#""/TR" "\"D:\Program Files\Player.exe\"""#);
     }
 }

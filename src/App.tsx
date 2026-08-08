@@ -23,6 +23,7 @@ import { parseSubtitles } from "./lib/subtitles";
 import { resumablePosition, updateRecentVideoProgress } from "./lib/videoProgress";
 import {
   DEFAULT_PREFERENCES,
+  configureElevatedApplication,
   exitApplication,
   findMatchingSubtitle,
   getLastPath,
@@ -36,6 +37,7 @@ import {
   listSubtitleDirectory,
   readAudioMetadata,
   readSubtitle,
+  removeElevatedApplication,
   saveLastPath,
   savePreferences,
   setAppFullscreen,
@@ -96,6 +98,7 @@ export function App() {
   const [applicationPickerLoading, setApplicationPickerLoading] = useState(false);
   const [applicationPickerError, setApplicationPickerError] = useState("");
   const [applicationPickerRunAsAdministrator, setApplicationPickerRunAsAdministrator] = useState(false);
+  const [applicationPermissionPending, setApplicationPermissionPending] = useState(false);
   const [applicationLaunchError, setApplicationLaunchError] = useState("");
   const [browserRegion, setBrowserRegion] = useState<"navigation" | "files">("files");
   const [navigationIndex, setNavigationIndex] = useState(0);
@@ -453,41 +456,92 @@ export function App() {
     }
   }, [applicationPickerListing?.parent, applicationPickerPath, browseApplications, closeApplicationPicker]);
 
-  const activateApplicationPickerItem = useCallback((item: ApplicationPickerItem) => {
-    if (item.kind !== "application") {
-      void browseApplications(item.path);
-      return;
-    }
-    setPreferences((current) => ({
-      ...current,
-      applicationShortcuts: bindApplicationShortcut(current.applicationShortcuts, {
-        name: item.name.replace(/\.exe$/i, ""),
-        path: item.path,
-        runAsAdministrator: applicationPickerRunAsAdministrator,
-      }),
-    }));
-    closeApplicationPicker();
-  }, [applicationPickerRunAsAdministrator, browseApplications, closeApplicationPicker]);
-
-  const removeBoundApplication = useCallback((path: string) => {
-    setPreferences((current) => ({
-      ...current,
-      applicationShortcuts: removeApplicationShortcut(current.applicationShortcuts, path),
-    }));
-  }, []);
-
-  const showApplicationLaunchFailure = useCallback((reason: unknown) => {
-    const failure = reason as { message?: string };
-    setApplicationLaunchError(t("applications.launchFailed", { message: failure.message ?? String(reason) }));
+  const showApplicationFailure = useCallback((
+    reason: unknown,
+    operation: "launch" | "configure" | "remove",
+  ) => {
+    const failure = reason as { code?: string; message?: string };
+    const message = failure.code === "elevation_cancelled"
+      ? t("applications.elevationCancelled")
+      : t(
+          operation === "launch"
+            ? "applications.launchFailed"
+            : operation === "configure"
+              ? "applications.elevationSetupFailed"
+              : "applications.elevationRemovalFailed",
+          { message: failure.message ?? String(reason) },
+        );
+    setApplicationLaunchError(message);
     if (applicationLaunchErrorTimerRef.current !== null) {
       window.clearTimeout(applicationLaunchErrorTimerRef.current);
     }
     applicationLaunchErrorTimerRef.current = window.setTimeout(() => setApplicationLaunchError(""), 4200);
   }, [t]);
 
+  const activateApplicationPickerItem = useCallback(async (item: ApplicationPickerItem) => {
+    if (applicationPermissionPending) return;
+    if (item.kind !== "application") {
+      void browseApplications(item.path);
+      return;
+    }
+    const existing = preferences.applicationShortcuts.find(
+      (shortcut) => shortcut.path.toLowerCase() === item.path.toLowerCase(),
+    );
+    setApplicationPermissionPending(true);
+    try {
+      if (applicationPickerRunAsAdministrator) {
+        await configureElevatedApplication(item.path);
+      } else if (existing?.runAsAdministrator) {
+        await removeElevatedApplication(existing.path);
+      }
+      setPreferences((current) => ({
+        ...current,
+        applicationShortcuts: bindApplicationShortcut(current.applicationShortcuts, {
+          name: item.name.replace(/\.exe$/i, ""),
+          path: item.path,
+          runAsAdministrator: applicationPickerRunAsAdministrator,
+        }),
+      }));
+      closeApplicationPicker();
+    } catch (reason) {
+      showApplicationFailure(
+        reason,
+        applicationPickerRunAsAdministrator ? "configure" : "remove",
+      );
+    } finally {
+      setApplicationPermissionPending(false);
+    }
+  }, [
+    applicationPermissionPending,
+    applicationPickerRunAsAdministrator,
+    browseApplications,
+    closeApplicationPicker,
+    preferences.applicationShortcuts,
+    showApplicationFailure,
+  ]);
+
+  const removeBoundApplication = useCallback(async (application: ApplicationShortcut) => {
+    if (applicationPermissionPending) return;
+    setApplicationPermissionPending(true);
+    try {
+      if (application.runAsAdministrator) {
+        await removeElevatedApplication(application.path);
+      }
+      setPreferences((current) => ({
+        ...current,
+        applicationShortcuts: removeApplicationShortcut(current.applicationShortcuts, application.path),
+      }));
+    } catch (reason) {
+      showApplicationFailure(reason, "remove");
+    } finally {
+      setApplicationPermissionPending(false);
+    }
+  }, [applicationPermissionPending, showApplicationFailure]);
+
   const launchBoundApplication = useCallback((application: ApplicationShortcut) => {
-    void launchApplication(application.path, application.runAsAdministrator).catch(showApplicationLaunchFailure);
-  }, [showApplicationLaunchFailure]);
+    void launchApplication(application.path, application.runAsAdministrator)
+      .catch((reason) => showApplicationFailure(reason, "launch"));
+  }, [showApplicationFailure]);
 
   const applicationStartIndex = roots.length + preferences.favoriteFolders.length;
   const bindApplicationIndex = applicationStartIndex + preferences.applicationShortcuts.length;
@@ -834,7 +888,7 @@ export function App() {
       ? preferences.applicationShortcuts[applicationIndex]
       : null;
     if (selectedFavorite) removeFavorite(selectedFavorite.path);
-    else if (selectedApplication) removeBoundApplication(selectedApplication.path);
+    else if (selectedApplication) void removeBoundApplication(selectedApplication);
     else toggleCurrentFavorite();
   }, [
     applicationStartIndex,
@@ -882,6 +936,7 @@ export function App() {
       return;
     }
     if (applicationPickerOpen) {
+      if (applicationPermissionPending) return;
       if (action === "back") goBackInApplicationPicker();
       else if (action === "togglePlayback") {
         setApplicationPickerRunAsAdministrator((enabled) => !enabled);
@@ -891,7 +946,7 @@ export function App() {
         setApplicationPickerSelectedIndex((index) => Math.min(Math.max(0, applicationPickerItems.length - 1), index + 1));
       } else if (action === "confirm") {
         const item = applicationPickerItems[applicationPickerSelectedIndex];
-        if (item) activateApplicationPickerItem(item);
+        if (item) void activateApplicationPickerItem(item);
       }
       return;
     }
@@ -1034,6 +1089,7 @@ export function App() {
     applicationPickerItems,
     applicationPickerOpen,
     applicationPickerSelectedIndex,
+    applicationPermissionPending,
     beginSystemHold,
     browserGridColumns,
     browserRegion,
@@ -1318,6 +1374,7 @@ export function App() {
         loading={applicationPickerLoading}
         error={applicationPickerError}
         runAsAdministrator={applicationPickerRunAsAdministrator}
+        permissionPending={applicationPermissionPending}
         onSelect={setApplicationPickerSelectedIndex}
         onRunAsAdministratorChange={setApplicationPickerRunAsAdministrator}
         onActivate={activateApplicationPickerItem}

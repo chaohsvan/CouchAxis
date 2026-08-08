@@ -161,6 +161,16 @@ export async function launchApplication(path: string, runAsAdministrator = false
   }
 }
 
+export async function configureElevatedApplication(path: string): Promise<void> {
+  if (!isDesktop()) return;
+  await invoke("configure_elevated_application", { path });
+}
+
+export async function removeElevatedApplication(path: string): Promise<void> {
+  if (!isDesktop()) return;
+  await invoke("remove_elevated_application", { path });
+}
+
 export async function readAudioMetadata(path: string): Promise<AudioMetadata> {
   if (isDesktop()) return invoke<AudioMetadata>("read_audio_metadata", { path });
   await new Promise((resolve) => window.setTimeout(resolve, 80));

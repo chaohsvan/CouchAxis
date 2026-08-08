@@ -67,26 +67,81 @@ pub async fn launch_application(
     run_as_administrator: bool,
 ) -> Result<(), CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
-        let requested = PathBuf::from(path);
-        if !filesystem::is_executable_path(&requested) {
-            return Err(CommandError {
-                code: "unsupported_application",
-                message: "只能绑定 Windows .exe 应用程序".into(),
-            });
-        }
-        let canonical = std::fs::canonicalize(&requested)
-            .map_err(|source| crate::error::AppError::io(&requested, source))?;
-        if !canonical.is_file() {
-            return Err(CommandError {
-                code: "application_not_found",
-                message: "应用程序文件不存在".into(),
-            });
-        }
+        let canonical = canonical_application_path(path)?;
         platform::launch_application(&canonical, run_as_administrator)
-            .map_err(|source| crate::error::AppError::io(&canonical, source).into())
+            .map_err(|source| application_operation_error(&canonical, source, "launch_application"))
     })
     .await
     .map_err(task_error)?
+}
+
+#[tauri::command]
+pub async fn configure_elevated_application(path: String) -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let canonical = canonical_application_path(path)?;
+        platform::configure_elevated_application(&canonical).map_err(|source| {
+            application_operation_error(&canonical, source, "configure_elevated_application")
+        })
+    })
+    .await
+    .map_err(task_error)?
+}
+
+#[tauri::command]
+pub async fn remove_elevated_application(path: String) -> Result<(), CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let requested = executable_path(path)?;
+        let task_path = std::fs::canonicalize(&requested).unwrap_or(requested);
+        platform::remove_elevated_application(&task_path).map_err(|source| {
+            application_operation_error(&task_path, source, "remove_elevated_application")
+        })
+    })
+    .await
+    .map_err(task_error)?
+}
+
+fn canonical_application_path(path: String) -> Result<PathBuf, CommandError> {
+    let requested = executable_path(path)?;
+    let canonical = std::fs::canonicalize(&requested)
+        .map_err(|source| crate::error::AppError::io(&requested, source))?;
+    if !canonical.is_file() {
+        return Err(CommandError {
+            code: "application_not_found",
+            message: "应用程序文件不存在".into(),
+        });
+    }
+    Ok(canonical)
+}
+
+fn executable_path(path: String) -> Result<PathBuf, CommandError> {
+    let requested = PathBuf::from(path);
+    if !filesystem::is_executable_path(&requested) {
+        return Err(CommandError {
+            code: "unsupported_application",
+            message: "只能绑定 Windows .exe 应用程序".into(),
+        });
+    }
+    Ok(requested)
+}
+
+fn application_operation_error(
+    path: &Path,
+    source: std::io::Error,
+    fallback_code: &'static str,
+) -> CommandError {
+    let cancelled = matches!(source.raw_os_error(), Some(5 | 1223));
+    CommandError {
+        code: if cancelled {
+            "elevation_cancelled"
+        } else {
+            fallback_code
+        },
+        message: if cancelled {
+            "已取消 Windows 管理员授权".into()
+        } else {
+            crate::error::AppError::io(path, source).to_string()
+        },
+    }
 }
 
 #[tauri::command]
@@ -474,5 +529,26 @@ mod tests {
             PNG_SIGNATURE
         );
         std::fs::remove_dir_all(directory).expect("remove screenshot directory");
+    }
+
+    #[test]
+    fn reports_uac_cancellation_as_an_expected_operation_result() {
+        for error_code in [5, 1223] {
+            let error = application_operation_error(
+                Path::new(r"C:\Tools\Player.exe"),
+                std::io::Error::from_raw_os_error(error_code),
+                "configure_elevated_application",
+            );
+
+            assert_eq!(error.code, "elevation_cancelled");
+            assert_eq!(error.message, "已取消 Windows 管理员授权");
+        }
+    }
+
+    #[test]
+    fn accepts_missing_executable_path_for_elevated_task_cleanup() {
+        let path = executable_path(r"C:\Tools\Removed Player.exe".into()).unwrap();
+
+        assert_eq!(path, PathBuf::from(r"C:\Tools\Removed Player.exe"));
     }
 }

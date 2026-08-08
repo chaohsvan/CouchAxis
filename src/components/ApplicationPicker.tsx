@@ -16,6 +16,7 @@ interface ApplicationPickerProps {
   loading: boolean;
   error: string;
   runAsAdministrator: boolean;
+  permissionPending: boolean;
   onSelect: (index: number) => void;
   onRunAsAdministratorChange: (enabled: boolean) => void;
   onActivate: (item: ApplicationPickerItem) => void;
@@ -31,6 +32,7 @@ export function ApplicationPicker({
   loading,
   error,
   runAsAdministrator,
+  permissionPending,
   onSelect,
   onRunAsAdministratorChange,
   onActivate,
@@ -46,10 +48,10 @@ export function ApplicationPicker({
   }, [selectedIndex]);
 
   return (
-    <section className="folder-picker application-picker" aria-label={t("applicationPicker.title")}>
+    <section className="folder-picker application-picker" aria-label={t("applicationPicker.title")} aria-busy={permissionPending}>
       <header className="folder-picker-header">
         <div className="folder-picker-title">
-          <button type="button" className="icon-button" onClick={onBack} title={t("common.back")}><ChevronLeft aria-hidden="true" /></button>
+          <button type="button" className="icon-button" onClick={onBack} disabled={permissionPending} title={t("common.back")}><ChevronLeft aria-hidden="true" /></button>
           <span className="folder-picker-mark"><AppWindow aria-hidden="true" /></span>
           <div>
             <span>{t("applicationPicker.title")}</span>
@@ -61,6 +63,7 @@ export function ApplicationPicker({
             type="button"
             className={runAsAdministrator ? "switch-control application-admin-toggle active" : "switch-control application-admin-toggle"}
             onClick={() => onRunAsAdministratorChange(!runAsAdministrator)}
+            disabled={permissionPending}
             title={t("applicationPicker.runAsAdministrator")}
             aria-pressed={runAsAdministrator}
           >
@@ -68,7 +71,7 @@ export function ApplicationPicker({
             <b>{t("applicationPicker.administrator")}</b>
             <span aria-hidden="true" />
           </button>
-          <button type="button" className="icon-button" onClick={onClose} title={t("common.close")}><X aria-hidden="true" /></button>
+          <button type="button" className="icon-button" onClick={onClose} disabled={permissionPending} title={t("common.close")}><X aria-hidden="true" /></button>
         </div>
       </header>
 
@@ -96,9 +99,10 @@ export function ApplicationPicker({
                   className={selected ? `folder-picker-row ${item.kind} selected` : `folder-picker-row ${item.kind}`}
                   key={`${item.kind}:${item.path}`}
                   ref={selected ? selectedRef : undefined}
+                  disabled={permissionPending}
                   onMouseEnter={() => onSelect(index)}
                   onFocus={() => onSelect(index)}
-                  onClick={() => onActivate(item)}
+                  onClick={() => void onActivate(item)}
                 >
                   <span className="folder-picker-entry-icon"><Icon aria-hidden="true" /></span>
                   <span className="folder-picker-entry-copy">
@@ -113,7 +117,7 @@ export function ApplicationPicker({
       </div>
 
       <footer className="folder-picker-footer">
-        <span>{t("applicationPicker.footer")}</span>
+        <span>{permissionPending ? t("applicationPicker.permissionPending") : t("applicationPicker.footer")}</span>
       </footer>
     </section>
   );

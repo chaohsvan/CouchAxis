@@ -201,6 +201,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .application-picker .folder-picker-mark { color: #17150c; background: var(--yellow); }
 .application-picker .folder-picker-row.selected { box-shadow: inset 4px 0 0 var(--yellow); }
 .application-picker .folder-picker-row.application .folder-picker-entry-icon { color: var(--yellow); }
+.application-picker[aria-busy="true"] .folder-picker-row { opacity: .58; cursor: wait; }
 .application-launch-error { position: fixed; z-index: 160; top: 26px; right: 28px; max-width: min(540px, calc(100vw - 56px)); padding: 13px 17px; border: 1px solid #74483f; border-left: 4px solid var(--accent); border-radius: 4px; color: #f7e6e2; background: rgba(48, 25, 21, .96); box-shadow: 0 14px 34px rgba(0, 0, 0, .38); font-size: 13px; overflow-wrap: anywhere; }
 
 .player-shell { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background: #050606; }

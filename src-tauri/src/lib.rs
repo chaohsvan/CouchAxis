@@ -6,10 +6,11 @@ mod platform;
 mod preferences;
 
 use commands::{
-    exit_application, find_matching_subtitle, get_last_path, get_preferences, launch_application,
-    list_application_directory, list_audio_queue, list_directory, list_roots,
-    list_subtitle_directory, read_audio_metadata, read_subtitle, save_last_path, save_preferences,
-    save_screenshot, shutdown_system,
+    configure_elevated_application, exit_application, find_matching_subtitle, get_last_path,
+    get_preferences, launch_application, list_application_directory, list_audio_queue,
+    list_directory, list_roots, list_subtitle_directory, read_audio_metadata, read_subtitle,
+    remove_elevated_application, save_last_path, save_preferences, save_screenshot,
+    shutdown_system,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -20,6 +21,8 @@ pub fn run() {
             shutdown_system,
             list_roots,
             list_application_directory,
+            configure_elevated_application,
+            remove_elevated_application,
             launch_application,
             list_directory,
             list_audio_queue,

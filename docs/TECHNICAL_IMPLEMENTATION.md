@@ -188,7 +188,9 @@ CouchAxis/
 | `list_roots` | 无 | `RootEntry[]` | 枚举固定盘和可移动盘 |
 | `list_directory` | 路径、隐藏开关 | `DirectoryListing` | 返回文件夹和支持的媒体 |
 | `list_application_directory` | 路径、隐藏开关 | `ApplicationDirectoryListing` | 仅返回文件夹和 `.exe` |
-| `launch_application` | EXE 路径、管理员权限开关 | `()` | 规范化后交给 Windows Shell 普通启动或提权启动 |
+| `configure_elevated_application` | EXE 路径 | `()` | 经一次 UAC 注册固定目标的最高权限计划任务 |
+| `remove_elevated_application` | EXE 路径 | `()` | 删除该路径对应的 CouchAxis 计划任务 |
+| `launch_application` | EXE 路径、管理员权限开关 | `()` | 普通启动，或运行已注册的最高权限任务 |
 | `list_audio_queue` | 根路径、隐藏开关 | `FileEntry[]` | 递归扫描音乐队列 |
 | `read_audio_metadata` | 文件路径 | `AudioMetadata` | lofty 读取标签、歌词和封面 |
 | `list_subtitle_directory` | 路径、隐藏开关 | `SubtitleDirectoryListing` | 仅返回文件夹和字幕 |
@@ -267,7 +269,11 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 
 绑定界面维护 `runAsAdministrator` 开关，默认关闭，手柄 X/□ 与界面开关操作同一状态。确认 `.exe` 时，该值随名称和路径一并写入 `applicationShortcuts`；管理员绑定在侧栏显示盾牌标记。
 
-启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层调用 `ShellExecuteW`。普通绑定使用 `open` 动作；管理员绑定使用 `runas` 动作并由 Windows 显示标准 UAC 提示。路径以 UTF-16 参数直接传递，不拼接命令，也不传给 PowerShell 或 `cmd.exe`，因此空格、中文和命令字符不会被解释为额外参数。
+绑定管理员应用时，Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件。平台层以规范路径的 SHA-256 摘要生成稳定任务名，通过 `schtasks.exe /Create` 注册 `HIGHEST + Interactive only` 任务，任务动作只包含带引号的固定 EXE 路径，不接受启动参数。普通权限无法注册时才通过 `ShellExecuteExW("runas")` 请求一次 UAC，并等待注册结果；取消授权不会保存绑定。
+
+后续管理员启动只执行 `schtasks.exe /Run /TN <固定任务名>`。`/Run` 忽略日程，但复用任务保存的程序、账户和权限，因此不会再次调用 `runas`。旧管理员绑定如果尚无任务，会在首次启动时补做一次注册。普通绑定继续使用 `ShellExecuteW("open")`，路径以 UTF-16 参数直接传递。所有 `schtasks.exe` 调用均使用独立参数和 `CREATE_NO_WINDOW`，不经过 PowerShell 或 `cmd.exe`。
+
+移除管理员绑定时先查询任务是否存在；存在时尝试直接删除，权限不足才请求 UAC。只有任务删除成功后才从偏好中移除绑定，避免留下界面不可见但仍可运行的高权限入口。
 
 ## 9. 偏好持久化
 
@@ -566,7 +572,7 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 - 退出与系统关机没有单击入口，前端统一要求 1.8 秒持续确认。
 - Windows 关机参数固定为 `shutdown.exe /s /t 0`，不经过 shell，不接受前端字符串，也不使用强制关闭参数 `/f`。
 - 应用绑定选择器只暴露 `.exe`，启动命令再次校验扩展名、规范路径与文件类型。
-- 启动 EXE 使用 `ShellExecuteW` 的独立文件参数，不经过命令行解释器，也不允许前端注入命令参数；只有绑定项明确启用管理员权限时才使用 `runas` 并交由 UAC 处理。
+- 普通 EXE 使用 `ShellExecuteW` 独立文件参数；管理员 EXE 使用按规范路径散列命名的固定计划任务。注册过程不接受任意命令参数，启动过程只接收任务名，不经过命令行解释器。
 - 非 Windows 平台的关机适配器明确返回“不支持”，后续应在对应平台实现后再开放按钮。
 
 ### 16.2 需要继续改进

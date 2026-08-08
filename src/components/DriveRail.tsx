@@ -17,7 +17,7 @@ interface DriveRailProps {
   onSelectPath: (path: string) => void;
   onRemoveFavorite: (path: string) => void;
   onLaunchApplication: (application: ApplicationShortcut) => void;
-  onRemoveApplication: (path: string) => void;
+  onRemoveApplication: (application: ApplicationShortcut) => void;
   onBindApplication: () => void;
   onOpenSettings: () => void;
   onSystemHoldStart: (action: SystemAction) => void;
@@ -181,7 +181,7 @@ export function DriveRail({
                     className="favorite-remove"
                     onMouseEnter={() => onSelectIndex(index)}
                     onFocus={() => onSelectIndex(index)}
-                    onClick={() => onRemoveApplication(application.path)}
+                    onClick={() => onRemoveApplication(application)}
                     title={t("nav.removeApplication")}
                     aria-label={`${t("nav.removeApplication")}：${application.name}`}
                   >

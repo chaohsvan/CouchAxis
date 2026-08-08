@@ -22,3 +22,17 @@ pub fn launch_application(_path: &Path, _run_as_administrator: bool) -> io::Resu
         "external application launch is not implemented on this platform",
     ))
 }
+
+pub fn configure_elevated_application(_path: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "elevated application tasks are not implemented on this platform",
+    ))
+}
+
+pub fn remove_elevated_application(_path: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "elevated application tasks are not implemented on this platform",
+    ))
+}
