@@ -1,8 +1,8 @@
-import { ArrowUpLeft, ArrowUpRight, BookOpen, ChevronLeft, Eye, EyeOff, FolderOpen, Languages, Rocket, Settings2 } from "lucide-react";
+import { ArrowUpLeft, ArrowUpRight, BookOpen, Captions, ChevronLeft, Eye, EyeOff, FolderOpen, Languages, Rocket, Settings2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 import { displayPath } from "../lib/format";
-import type { AppLanguage, AppPreferences, MangaStartSide, StartupView } from "../types";
+import type { AppLanguage, AppPreferences, MangaStartSide, StartupView, SubtitleFontSize } from "../types";
 
 interface SettingsPanelProps {
   preferences: AppPreferences;
@@ -14,6 +14,7 @@ interface SettingsPanelProps {
   onLanguageChange: (language: AppLanguage) => void;
   onOpenScreenshotDirectory: () => void;
   onMangaStartSideChange: (side: MangaStartSide) => void;
+  onSubtitleFontSizeChange: (size: SubtitleFontSize) => void;
   onClose: () => void;
 }
 
@@ -27,6 +28,7 @@ export function SettingsPanel({
   onLanguageChange,
   onOpenScreenshotDirectory,
   onMangaStartSideChange,
+  onSubtitleFontSizeChange,
   onClose,
 }: SettingsPanelProps) {
   const { t } = useI18n();
@@ -171,6 +173,32 @@ export function SettingsPanel({
                 onFocus={() => onSelectRow(4)}
                 onClick={() => onMangaStartSideChange(value)}
               ><Icon aria-hidden="true" /><span>{label}</span></button>
+            ))}
+          </div>
+        </div>
+
+        <div
+          ref={selectedRow === 5 ? selectedRef : undefined}
+          className={selectedRow === 5 ? "setting-row selected" : "setting-row"}
+          onMouseEnter={() => onSelectRow(5)}
+        >
+          <span className="setting-icon"><Captions aria-hidden="true" /></span>
+          <div className="setting-copy"><strong>{t("settings.subtitleFontSize")}</strong></div>
+          <div className="segmented-control compact" role="radiogroup" aria-label={t("settings.subtitleFontSize")}>
+            {([
+              ["small", t("settings.subtitleFontSize.small")],
+              ["medium", t("settings.subtitleFontSize.medium")],
+              ["large", t("settings.subtitleFontSize.large")],
+            ] as Array<[SubtitleFontSize, string]>).map(([value, label]) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={preferences.subtitleFontSize === value}
+                className={preferences.subtitleFontSize === value ? "active" : ""}
+                key={value}
+                onFocus={() => onSelectRow(5)}
+                onClick={() => onSubtitleFontSizeChange(value)}
+              >{label}</button>
             ))}
           </div>
         </div>

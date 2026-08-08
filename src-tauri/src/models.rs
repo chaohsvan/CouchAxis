@@ -102,6 +102,20 @@ impl Default for MangaStartSide {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum SubtitleFontSize {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Default for SubtitleFontSize {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum BrowserViewMode {
     List,
     Grid,
@@ -124,6 +138,7 @@ pub struct AppPreferences {
     pub recent_video_progress: Vec<RecentVideoProgress>,
     pub screenshot_directory: String,
     pub manga_start_side: MangaStartSide,
+    pub subtitle_font_size: SubtitleFontSize,
     pub browser_view_mode: BrowserViewMode,
 }
 

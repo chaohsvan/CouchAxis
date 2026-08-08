@@ -2,7 +2,7 @@ node_modules/
 dist/
 coverage/
 src-tauri/target/
-src-tauri/target-package/
+src-tauri/target-*/
 .idea/
 .vscode/
 *.log

@@ -240,6 +240,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .player-osd-meter { height: 5px; overflow: hidden; background: #3a4244; }
 .player-osd-meter i { display: block; height: 100%; background: var(--green); }
 .subtitle-overlay { position: absolute; z-index: 4; left: 8%; right: 8%; bottom: 142px; padding: 0 1ch; color: #fff; font-size: 26px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; text-align: center; unicode-bidi: plaintext; white-space: pre-line; text-shadow: 0 2px 3px #000, 0 0 6px #000; pointer-events: none; transform: translateZ(0); }
+.subtitle-overlay.subtitle-size-small { font-size: 20px; }
+.subtitle-overlay.subtitle-size-medium { font-size: 26px; }
+.subtitle-overlay.subtitle-size-large { font-size: 36px; }
 .screenshot-notice { position: absolute; z-index: 8; left: 50%; top: 104px; max-width: min(640px, calc(100% - 40px)); display: flex; align-items: center; gap: 10px; padding: 11px 15px; transform: translateX(-50%); border: 1px solid #496052; border-radius: 4px; color: #eaf0ed; background: rgba(15, 24, 20, .94); box-shadow: 0 8px 28px rgba(0, 0, 0, .38); }
 .screenshot-notice.error { border-color: #845247; background: rgba(38, 18, 15, .95); }
 .screenshot-notice svg { width: 19px; height: 19px; flex: 0 0 auto; color: var(--green); }
@@ -419,6 +422,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   .control-group { gap: 6px; }
   .timecode, .player-controls .control-group.end .icon-button:nth-of-type(1) { display: none; }
   .subtitle-overlay { bottom: 130px; font-size: 20px; }
+  .subtitle-overlay.subtitle-size-small { font-size: 17px; }
+  .subtitle-overlay.subtitle-size-medium { font-size: 20px; }
+  .subtitle-overlay.subtitle-size-large { font-size: 28px; }
   .subtitle-picker-title h2 { font-size: 14px; }
   .subtitle-picker-title > div > span { font-size: 11px; }
   .subtitle-picker-content { padding: 10px; }

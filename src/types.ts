@@ -24,6 +24,7 @@ export interface DirectoryListing {
 export type StartupView = "lastPath" | "drives" | "favorites";
 export type AppLanguage = "zh-CN" | "en-US";
 export type MangaStartSide = "left" | "right";
+export type SubtitleFontSize = "small" | "medium" | "large";
 export type BrowserViewMode = "list" | "grid";
 export type SystemAction = "exit" | "shutdown";
 
@@ -53,6 +54,7 @@ export interface AppPreferences {
   recentVideoProgress: RecentVideoProgress[];
   screenshotDirectory: string;
   mangaStartSide: MangaStartSide;
+  subtitleFontSize: SubtitleFontSize;
   browserViewMode: BrowserViewMode;
 }
 

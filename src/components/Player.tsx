@@ -33,7 +33,7 @@ import { captureVideoFrame, screenshotFileName } from "../lib/screenshots";
 import { stepPlaybackRate } from "../lib/playbackRate";
 import { isAppFullscreen, saveScreenshot, setAppFullscreen } from "../services/desktop";
 import { useI18n } from "../i18n";
-import type { FileEntry, SubtitleCue } from "../types";
+import type { FileEntry, SubtitleCue, SubtitleFontSize } from "../types";
 
 export interface PlayerHandle {
   pause: () => void;
@@ -55,6 +55,7 @@ interface PlayerProps {
   source: string;
   subtitleName: string;
   subtitleCues: SubtitleCue[];
+  subtitleFontSize: SubtitleFontSize;
   screenshotDirectory: string;
   resumePosition: number;
   onClose: () => void;
@@ -72,6 +73,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
     source,
     subtitleName,
     subtitleCues,
+    subtitleFontSize,
     screenshotDirectory,
     resumePosition,
     onClose,
@@ -217,7 +219,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       return;
     }
     try {
-      const pngData = await captureVideoFrame(video, subtitleText);
+      const pngData = await captureVideoFrame(video, subtitleText, subtitleFontSize);
       const fileName = screenshotFileName(media.name, new Date(), video.currentTime);
       const savedPath = await saveScreenshot(screenshotDirectory, fileName, pngData);
       const savedName = savedPath.split(/[\\/]/).pop() ?? fileName;
@@ -348,7 +350,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
       </div>
       {!source && <div className="player-placeholder"><FilmMark /><strong>{media.name}</strong><span>{t("player.localPreview")}</span></div>}
       {playbackError && <div className="player-error"><strong>{t("player.videoDecodeFailed")}</strong><span>{t("player.videoUnsupported")}</span></div>}
-      {subtitleText && <div className="subtitle-overlay">{subtitleText}</div>}
+      {subtitleText && (
+        <div className={`subtitle-overlay subtitle-size-${subtitleFontSize}`}>{subtitleText}</div>
+      )}
       {playbackOsd && (
         <div className={`player-osd ${playbackOsd.kind}`} role="status" aria-live="polite">
           {playbackOsd.kind === "speed" ? <Gauge aria-hidden="true" /> : <VolumeIcon aria-hidden="true" />}

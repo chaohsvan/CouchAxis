@@ -188,7 +188,7 @@ CouchAxis/
 | `list_roots` | 无 | `RootEntry[]` | 枚举固定盘和可移动盘 |
 | `list_directory` | 路径、隐藏开关 | `DirectoryListing` | 返回文件夹和支持的媒体 |
 | `list_application_directory` | 路径、隐藏开关 | `ApplicationDirectoryListing` | 仅返回文件夹和 `.exe` |
-| `launch_application` | EXE 路径 | `()` | 规范化并直接创建目标进程 |
+| `launch_application` | EXE 路径 | `()` | 规范化后交给 Windows Shell 启动 |
 | `list_audio_queue` | 根路径、隐藏开关 | `FileEntry[]` | 递归扫描音乐队列 |
 | `read_audio_metadata` | 文件路径 | `AudioMetadata` | lofty 读取标签、歌词和封面 |
 | `list_subtitle_directory` | 路径、隐藏开关 | `SubtitleDirectoryListing` | 仅返回文件夹和字幕 |
@@ -265,7 +265,7 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - 复用隐藏文件设置，默认不展示隐藏目录和可执行文件。
 - 文件夹优先，随后按名称不区分大小写排序。
 
-启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层执行 `Command::new(path).spawn()`。路径不拼接命令、不传给 PowerShell 或 `cmd.exe`，因此文件名中的空格和命令字符不会被解释为额外参数。
+启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层调用 `ShellExecuteW("open")`。该 API 与资源管理器启动语义一致，目标程序声明需要管理员权限时会触发标准 UAC 提示。路径以 UTF-16 参数直接传递，不拼接命令，也不传给 PowerShell 或 `cmd.exe`，因此空格、中文和命令字符不会被解释为额外参数。
 
 ## 9. 偏好持久化
 
@@ -284,6 +284,7 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
   "recentVideoProgress": [],
   "screenshotDirectory": "...\\CouchAxis Screenshots",
   "mangaStartSide": "left",
+  "subtitleFontSize": "medium",
   "browserViewMode": "list"
 }
 ```
@@ -296,6 +297,7 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - `browserViewMode` 缺失时默认升级为 `list`，随后由防抖偏好保存写回。
 - `applicationShortcuts` 保存用户确认绑定的名称与规范路径；绑定相同路径时不区分大小写去重。
 - `recentVideoProgress` 最多保存三个 `{ path, positionSeconds, durationSeconds, updatedAt }` 条目。
+- `subtitleFontSize` 使用 `small / medium / large`，旧配置缺失时由 `serde(default)` 升级为 `medium`。
 - 当前直接覆盖完整 JSON；后续如引入多窗口，应改为临时文件写入后原子替换。
 
 音乐播放模式当前单独保存在前端 `localStorage` 的 `couchaxis.audioMode`，这是现有实现的不一致点。建议后续并入 `AppPreferences`。
@@ -409,6 +411,7 @@ sequenceDiagram
 - 清理 `\N`、HTML 标签和 ASS 花括号样式。
 - 播放时除 `timeupdate` 外每 100 ms 读取媒体元素的真实时间，避免窗口全屏切换延迟事件时丢失短字幕。
 - `activeSubtitle` 返回当前时间内的全部活动字幕并按换行连接，避免重叠字幕只显示第一条。
+- `subtitleFontSize` 转换为覆盖层字号类，普通播放和专注模式使用同一份偏好；窄屏断点提供对应的三档固定字号。
 - 当前每次更新时间使用线性筛选活动字幕；字幕数量很大时可改为二分查找起点后扫描重叠区间。
 
 ### 11.5 截图链路
@@ -416,14 +419,14 @@ sequenceDiagram
 1. 校验视频已经具有当前帧和尺寸。
 2. 创建与原视频分辨率相同的 Canvas。
 3. `drawImage(video)` 绘制当前帧。
-4. 如有字幕，按宽度折行并描边绘制到底部。
+4. 如有字幕，按当前字幕字号档位缩放、按宽度折行并描边绘制到底部。
 5. 编码 PNG Blob，再转换为字节数组。
 6. IPC 发送到 Rust。
 7. Rust 校验 PNG 签名、清理 Windows 非法文件名并避免覆盖。
 
 当前字节数组通过 JSON IPC 传输，大分辨率截图会产生额外内存和序列化开销。迁移到 libmpv 后应优先由原生后端直接截图到目标文件。
 
-### 11.4 视频专注模式
+### 11.6 视频专注模式
 
 - React 状态隐藏顶部和底部控制层。
 - 通过 `services/desktop.ts` 调用 Tauri 原生窗口全屏。
@@ -561,7 +564,7 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 - 退出与系统关机没有单击入口，前端统一要求 1.8 秒持续确认。
 - Windows 关机参数固定为 `shutdown.exe /s /t 0`，不经过 shell，不接受前端字符串，也不使用强制关闭参数 `/f`。
 - 应用绑定选择器只暴露 `.exe`，启动命令再次校验扩展名、规范路径与文件类型。
-- 启动 EXE 使用固定程序路径直接创建进程，不经过 shell，也不允许前端注入命令参数。
+- 启动 EXE 使用 `ShellExecuteW` 的独立文件参数，不经过命令行解释器，也不允许前端注入命令参数；需要管理员权限时交由 UAC 处理。
 - 非 Windows 平台的关机适配器明确返回“不支持”，后续应在对应平台实现后再开放按钮。
 
 ### 16.2 需要继续改进

@@ -57,6 +57,7 @@ import type {
   StartupView,
   SubtitleCue,
   SubtitleDirectoryListing,
+  SubtitleFontSize,
   SystemAction,
 } from "./types";
 
@@ -304,6 +305,10 @@ export function App() {
 
   const updateMangaStartSide = useCallback((mangaStartSide: MangaStartSide) => {
     setPreferences((current) => ({ ...current, mangaStartSide }));
+  }, []);
+
+  const updateSubtitleFontSize = useCallback((subtitleFontSize: SubtitleFontSize) => {
+    setPreferences((current) => ({ ...current, subtitleFontSize }));
   }, []);
 
   const updateBrowserViewMode = useCallback((browserViewMode: BrowserViewMode) => {
@@ -775,17 +780,23 @@ export function App() {
       updateLanguage(preferences.language === "zh-CN" ? "en-US" : "zh-CN");
     } else if (settingsSelectedRow === 4) {
       updateMangaStartSide(preferences.mangaStartSide === "left" ? "right" : "left");
+    } else if (settingsSelectedRow === 5) {
+      const values: SubtitleFontSize[] = ["small", "medium", "large"];
+      const index = values.indexOf(preferences.subtitleFontSize);
+      updateSubtitleFontSize(values[(index + direction + values.length) % values.length]);
     }
   }, [
     preferences.language,
     preferences.mangaStartSide,
     preferences.showHiddenFiles,
     preferences.startupView,
+    preferences.subtitleFontSize,
     settingsSelectedRow,
     updateLanguage,
     updateMangaStartSide,
     updateShowHiddenFiles,
     updateStartupView,
+    updateSubtitleFontSize,
   ]);
 
   const controllerHelpContext: ControllerHelpContext = subtitlePickerOpen
@@ -951,7 +962,7 @@ export function App() {
     if (settingsOpen) {
       if (action === "back") closeSettings();
       else if (action === "up") setSettingsSelectedRow((row) => Math.max(0, row - 1));
-      else if (action === "down") setSettingsSelectedRow((row) => Math.min(4, row + 1));
+      else if (action === "down") setSettingsSelectedRow((row) => Math.min(5, row + 1));
       else if (settingsSelectedRow === 3 && (action === "left" || action === "right" || action === "confirm")) {
         openScreenshotDirectoryPicker();
       } else if (action === "left") adjustSelectedSetting(-1);
@@ -1123,6 +1134,7 @@ export function App() {
           source={mediaSource(media.path)}
           subtitleName={subtitleName}
           subtitleCues={subtitleCues}
+          subtitleFontSize={preferences.subtitleFontSize}
           screenshotDirectory={preferences.screenshotDirectory}
           resumePosition={currentVideoResumePosition}
           onClose={goBack}
@@ -1209,6 +1221,7 @@ export function App() {
               onLanguageChange={updateLanguage}
               onOpenScreenshotDirectory={openScreenshotDirectoryPicker}
               onMangaStartSideChange={updateMangaStartSide}
+              onSubtitleFontSizeChange={updateSubtitleFontSize}
               onClose={closeSettings}
             />
           ) : (<>

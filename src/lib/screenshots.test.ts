@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { screenshotFileName } from "./screenshots";
+import { screenshotFileName, subtitleFontScale } from "./screenshots";
 
 describe("screenshot file names", () => {
   it("includes the video stem, wall clock, and playback position", () => {
@@ -7,5 +7,13 @@ describe("screenshot file names", () => {
     expect(screenshotFileName("My.Movie.mkv", date, 3723.9)).toBe(
       "My.Movie_20260724-090807_01-02-03.png",
     );
+  });
+});
+
+describe("screenshot subtitle size", () => {
+  it("uses ordered scale factors for the three persisted settings", () => {
+    expect(subtitleFontScale("small")).toBeLessThan(subtitleFontScale("medium"));
+    expect(subtitleFontScale("medium")).toBe(1);
+    expect(subtitleFontScale("large")).toBeGreaterThan(subtitleFontScale("medium"));
   });
 });

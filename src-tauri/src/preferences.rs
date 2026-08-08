@@ -107,5 +107,9 @@ mod tests {
         );
         assert!(preferences.app.application_shortcuts.is_empty());
         assert!(preferences.app.recent_video_progress.is_empty());
+        assert_eq!(
+            preferences.app.subtitle_font_size,
+            crate::models::SubtitleFontSize::Medium
+        );
     }
 }

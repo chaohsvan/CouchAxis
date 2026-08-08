@@ -1,3 +1,11 @@
+import type { SubtitleFontSize } from "../types";
+
+const SUBTITLE_FONT_SCALE: Record<SubtitleFontSize, number> = {
+  small: 0.78,
+  medium: 1,
+  large: 1.38,
+};
+
 function pad(value: number, length = 2): string {
   return String(value).padStart(length, "0");
 }
@@ -33,7 +41,15 @@ function wrapSubtitle(context: CanvasRenderingContext2D, text: string, maxWidth:
   return lines;
 }
 
-export async function captureVideoFrame(video: HTMLVideoElement, subtitleText: string): Promise<number[]> {
+export function subtitleFontScale(size: SubtitleFontSize): number {
+  return SUBTITLE_FONT_SCALE[size];
+}
+
+export async function captureVideoFrame(
+  video: HTMLVideoElement,
+  subtitleText: string,
+  subtitleFontSize: SubtitleFontSize = "medium",
+): Promise<number[]> {
   if (!video.videoWidth || !video.videoHeight || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     throw new Error("video_frame_unavailable");
   }
@@ -45,7 +61,8 @@ export async function captureVideoFrame(video: HTMLVideoElement, subtitleText: s
   context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   if (subtitleText.trim()) {
-    const fontSize = Math.max(24, Math.round(canvas.width * 0.028));
+    const baseFontSize = Math.max(24, Math.round(canvas.width * 0.028));
+    const fontSize = Math.max(18, Math.round(baseFontSize * subtitleFontScale(subtitleFontSize)));
     context.font = `600 ${fontSize}px "Segoe UI", sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "bottom";

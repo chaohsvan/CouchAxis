@@ -21,6 +21,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   recentVideoProgress: [],
   screenshotDirectory: "D:\\Pictures\\CouchAxis Screenshots",
   mangaStartSide: "left",
+  subtitleFontSize: "medium",
   browserViewMode: "list",
 };
 const demoListings: Record<string, DirectoryListing> = {

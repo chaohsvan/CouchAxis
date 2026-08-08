@@ -1,7 +1,14 @@
 use crate::models::RootEntry;
-use std::{io, path::Path, process::Command};
+use std::{
+    io,
+    os::windows::ffi::OsStrExt,
+    path::{Component, Path, PathBuf, Prefix},
+    process::Command,
+    ptr,
+};
 use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 use windows_sys::Win32::System::WindowsProgramming::{DRIVE_FIXED, DRIVE_REMOVABLE};
+use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
 
 pub fn system_roots() -> Vec<RootEntry> {
     let drive_mask = unsafe { GetLogicalDrives() };
@@ -51,7 +58,58 @@ pub fn shutdown_system() -> io::Result<()> {
 }
 
 pub fn launch_application(path: &Path) -> io::Result<()> {
-    Command::new(path).spawn().map(|_| ())
+    let shell_path = shell_compatible_path(path);
+    let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+    let file: Vec<u16> = shell_path
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let directory: Vec<u16> = shell_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let result = unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            ptr::null(),
+            directory.as_ptr(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if result > 32 {
+        Ok(())
+    } else {
+        Err(io::Error::from_raw_os_error(result as i32))
+    }
+}
+
+fn shell_compatible_path(path: &Path) -> PathBuf {
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path.to_path_buf();
+    };
+    let mut normalized = match prefix.kind() {
+        Prefix::VerbatimDisk(letter) => PathBuf::from(format!("{}:\\", letter as char)),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut value = PathBuf::from(r"\\");
+            value.push(server);
+            value.push(share);
+            value
+        }
+        _ => return path.to_path_buf(),
+    };
+    for component in components {
+        if !matches!(component, Component::RootDir) {
+            normalized.push(component.as_os_str());
+        }
+    }
+    normalized
 }
 
 #[cfg(test)]
@@ -66,6 +124,14 @@ mod tests {
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             vec![OsStr::new("/s"), OsStr::new("/t"), OsStr::new("0")]
+        );
+    }
+
+    #[test]
+    fn removes_verbatim_prefix_before_shell_launch() {
+        assert_eq!(
+            shell_compatible_path(Path::new(r"\\?\D:\Program Files\Steam++\Steam++.exe")),
+            PathBuf::from(r"D:\Program Files\Steam++\Steam++.exe")
         );
     }
 }
