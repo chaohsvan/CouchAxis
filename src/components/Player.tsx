@@ -375,12 +375,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
         </div>
       )}
 
-      {!focusMode && <div className="player-topbar">
+      <div className="player-topbar" aria-hidden={focusMode}>
         <button type="button" className="icon-button" onClick={() => { reportProgress(); onClose(); }} title={t("player.close")}><X aria-hidden="true" /></button>
         <div><strong>{media.name}</strong><span>{subtitleName || t("player.noSubtitle")}</span></div>
-      </div>}
+      </div>
 
-      {!focusMode && <div className="player-controls">
+      <div className="player-controls" aria-hidden={focusMode}>
         <input
           className="progress"
           type="range"
@@ -417,7 +417,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player(
             <button type="button" className="icon-button" onClick={toggleFullscreen} title={t("common.fullscreen")}><Maximize aria-hidden="true" /></button>
           </div>
         </div>
-      </div>}
+      </div>
     </main>
   );
 });

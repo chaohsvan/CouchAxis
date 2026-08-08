@@ -1,9 +1,9 @@
 import type { SubtitleFontSize } from "../types";
 
 const SUBTITLE_FONT_SCALE: Record<SubtitleFontSize, number> = {
-  small: 0.78,
-  medium: 1,
-  large: 1.38,
+  small: 0.9,
+  medium: 1.15,
+  large: 1.5,
 };
 
 function pad(value: number, length = 2): string {
