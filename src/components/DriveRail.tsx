@@ -1,4 +1,4 @@
-import { AppWindow, FolderHeart, HardDrive, LogOut, Plus, Power, Settings, Trash2, Usb } from "lucide-react";
+import { AppWindow, FolderHeart, HardDrive, LogOut, Plus, Power, Settings, ShieldCheck, Trash2, Usb } from "lucide-react";
 import { useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useI18n } from "../i18n";
 import type { ApplicationShortcut, FavoriteFolder, RootEntry, SystemAction } from "../types";
@@ -16,7 +16,7 @@ interface DriveRailProps {
   onSelectIndex: (index: number) => void;
   onSelectPath: (path: string) => void;
   onRemoveFavorite: (path: string) => void;
-  onLaunchApplication: (path: string) => void;
+  onLaunchApplication: (application: ApplicationShortcut) => void;
   onRemoveApplication: (path: string) => void;
   onBindApplication: () => void;
   onOpenSettings: () => void;
@@ -165,15 +165,16 @@ export function DriveRail({
                 <div className="favorite-entry application-entry" key={application.path}>
                   <button
                     type="button"
-                    className={`drive-item application-item${focused && selectedIndex === index ? " focused" : ""}`}
+                    className={`drive-item application-item${application.runAsAdministrator ? " administrator" : ""}${focused && selectedIndex === index ? " focused" : ""}`}
                     ref={selectedIndex === index ? selectedRef : undefined}
                     onMouseEnter={() => onSelectIndex(index)}
                     onFocus={() => onSelectIndex(index)}
-                    onClick={() => onLaunchApplication(application.path)}
-                    title={application.path}
+                    onClick={() => onLaunchApplication(application)}
+                    title={application.runAsAdministrator ? `${application.path}\n${t("nav.runAsAdministrator")}` : application.path}
                   >
                     <AppWindow aria-hidden="true" />
                     <span>{application.name}</span>
+                    {application.runAsAdministrator && <ShieldCheck className="application-admin-mark" aria-label={t("nav.runAsAdministrator")} />}
                   </button>
                   <button
                     type="button"

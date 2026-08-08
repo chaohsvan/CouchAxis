@@ -54,6 +54,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .favorite-remove:hover, .favorite-remove:focus-visible { color: #fff; border-color: #65443d; background: #38211d; }
 .favorite-remove svg { width: 16px; height: 16px; }
 .application-item svg, .bind-application-item svg { color: var(--yellow); }
+.application-item.administrator { grid-template-columns: 28px minmax(0, 1fr) 18px; }
+.application-item .application-admin-mark { width: 16px; height: 16px; color: var(--green); }
 .bind-application-item { border: 1px dashed #465052; border-left-width: 3px; }
 .rail-actions { flex: 0 0 auto; display: grid; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .system-action-item { --hold-progress: 0; position: relative; isolation: isolate; overflow: hidden; user-select: none; touch-action: none; }
@@ -173,6 +175,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 
 .folder-picker { position: fixed; z-index: 110; inset: 0; display: grid; grid-template-rows: 94px minmax(0, 1fr) 38px; background: #0b0d0e; }
 .folder-picker-header { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 32px; border-bottom: 1px solid var(--line); background: #0e1112; }
+.folder-picker-header-actions { display: flex; align-items: center; flex: 0 0 auto; gap: 10px; }
+.application-admin-toggle { min-width: 210px; justify-content: flex-start; }
+.application-admin-toggle > svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.application-admin-toggle > b { min-width: 0; flex: 1; text-align: left; }
 .folder-picker-title { min-width: 0; display: flex; align-items: center; gap: 16px; }
 .folder-picker-title > div { min-width: 0; }
 .folder-picker-title > div > span { color: var(--green); font-size: 12px; font-weight: 700; }
@@ -427,6 +433,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
   .subtitle-overlay.subtitle-size-medium { font-size: 28px; }
   .subtitle-overlay.subtitle-size-large { font-size: 36px; }
   .subtitle-picker-title h2 { font-size: 14px; }
+  .application-admin-toggle { min-width: 54px; justify-content: center; }
+  .application-admin-toggle > b { display: none; }
   .subtitle-picker-title > div > span { font-size: 11px; }
   .subtitle-picker-content { padding: 10px; }
   .subtitle-row { grid-template-columns: 40px minmax(0, 1fr) 22px; gap: 10px; padding-right: 10px; }

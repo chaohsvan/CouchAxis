@@ -112,4 +112,15 @@ mod tests {
             crate::models::SubtitleFontSize::Medium
         );
     }
+
+    #[test]
+    fn upgrades_legacy_application_shortcuts_without_elevation_setting() {
+        let preferences: Preferences = serde_json::from_str(
+            r#"{"applicationShortcuts":[{"name":"Player","path":"C:\\Tools\\Player.exe"}]}"#,
+        )
+        .expect("legacy application shortcut");
+
+        assert_eq!(preferences.app.application_shortcuts.len(), 1);
+        assert!(!preferences.app.application_shortcuts[0].run_as_administrator);
+    }
 }

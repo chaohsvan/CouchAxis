@@ -188,7 +188,7 @@ CouchAxis/
 | `list_roots` | 无 | `RootEntry[]` | 枚举固定盘和可移动盘 |
 | `list_directory` | 路径、隐藏开关 | `DirectoryListing` | 返回文件夹和支持的媒体 |
 | `list_application_directory` | 路径、隐藏开关 | `ApplicationDirectoryListing` | 仅返回文件夹和 `.exe` |
-| `launch_application` | EXE 路径 | `()` | 规范化后交给 Windows Shell 启动 |
+| `launch_application` | EXE 路径、管理员权限开关 | `()` | 规范化后交给 Windows Shell 普通启动或提权启动 |
 | `list_audio_queue` | 根路径、隐藏开关 | `FileEntry[]` | 递归扫描音乐队列 |
 | `read_audio_metadata` | 文件路径 | `AudioMetadata` | lofty 读取标签、歌词和封面 |
 | `list_subtitle_directory` | 路径、隐藏开关 | `SubtitleDirectoryListing` | 仅返回文件夹和字幕 |
@@ -265,7 +265,9 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - 复用隐藏文件设置，默认不展示隐藏目录和可执行文件。
 - 文件夹优先，随后按名称不区分大小写排序。
 
-启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层调用 `ShellExecuteW("open")`。该 API 与资源管理器启动语义一致，目标程序声明需要管理员权限时会触发标准 UAC 提示。路径以 UTF-16 参数直接传递，不拼接命令，也不传给 PowerShell 或 `cmd.exe`，因此空格、中文和命令字符不会被解释为额外参数。
+绑定界面维护 `runAsAdministrator` 开关，默认关闭，手柄 X/□ 与界面开关操作同一状态。确认 `.exe` 时，该值随名称和路径一并写入 `applicationShortcuts`；管理员绑定在侧栏显示盾牌标记。
+
+启动时 Rust 重新检查扩展名，使用 `canonicalize()` 解析为现存的规范路径并确认其为文件，再由 Windows 平台适配层调用 `ShellExecuteW`。普通绑定使用 `open` 动作；管理员绑定使用 `runas` 动作并由 Windows 显示标准 UAC 提示。路径以 UTF-16 参数直接传递，不拼接命令，也不传给 PowerShell 或 `cmd.exe`，因此空格、中文和命令字符不会被解释为额外参数。
 
 ## 9. 偏好持久化
 
@@ -295,7 +297,7 @@ UI 对用户展示 `message`，未来日志和遥测应以 `code` 聚合，避�
 - 写入前创建配置目录。
 - 截图目录为空时回退到系统图片目录并尝试创建。
 - `browserViewMode` 缺失时默认升级为 `list`，随后由防抖偏好保存写回。
-- `applicationShortcuts` 保存用户确认绑定的名称与规范路径；绑定相同路径时不区分大小写去重。
+- `applicationShortcuts` 保存用户确认绑定的名称、规范路径和 `runAsAdministrator`；绑定相同路径时不区分大小写去重，旧条目缺少权限字段时默认升级为 `false`。
 - `recentVideoProgress` 最多保存三个 `{ path, positionSeconds, durationSeconds, updatedAt }` 条目。
 - `subtitleFontSize` 使用 `small / medium / large`，旧配置缺失时由 `serde(default)` 升级为 `medium`。
 - 当前直接覆盖完整 JSON；后续如引入多窗口，应改为临时文件写入后原子替换。
@@ -564,7 +566,7 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 - 退出与系统关机没有单击入口，前端统一要求 1.8 秒持续确认。
 - Windows 关机参数固定为 `shutdown.exe /s /t 0`，不经过 shell，不接受前端字符串，也不使用强制关闭参数 `/f`。
 - 应用绑定选择器只暴露 `.exe`，启动命令再次校验扩展名、规范路径与文件类型。
-- 启动 EXE 使用 `ShellExecuteW` 的独立文件参数，不经过命令行解释器，也不允许前端注入命令参数；需要管理员权限时交由 UAC 处理。
+- 启动 EXE 使用 `ShellExecuteW` 的独立文件参数，不经过命令行解释器，也不允许前端注入命令参数；只有绑定项明确启用管理员权限时才使用 `runas` 并交由 UAC 处理。
 - 非 Windows 平台的关机适配器明确返回“不支持”，后续应在对应平台实现后再开放按钮。
 
 ### 16.2 需要继续改进

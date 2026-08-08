@@ -18,6 +18,7 @@ describe("controller help mappings", () => {
     expect(descriptions[contexts.indexOf("image")]).toContain("help.action.scaleLock");
     expect(descriptions[contexts.indexOf("image")]).toContain("help.action.focusMode");
     expect(descriptions[contexts.indexOf("folder")]).toContain("help.action.openOrChooseFolder");
+    expect(descriptions[contexts.indexOf("application")]).toContain("help.action.toggleApplicationAdministrator");
     expect(descriptions[contexts.indexOf("subtitle")]).not.toContain("help.action.fullscreen");
   });
 });

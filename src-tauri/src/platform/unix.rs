@@ -16,7 +16,7 @@ pub fn shutdown_system() -> io::Result<()> {
     ))
 }
 
-pub fn launch_application(_path: &Path) -> io::Result<()> {
+pub fn launch_application(_path: &Path, _run_as_administrator: bool) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "external application launch is not implemented on this platform",

@@ -62,7 +62,10 @@ pub async fn list_application_directory(
 }
 
 #[tauri::command]
-pub async fn launch_application(path: String) -> Result<(), CommandError> {
+pub async fn launch_application(
+    path: String,
+    run_as_administrator: bool,
+) -> Result<(), CommandError> {
     tauri::async_runtime::spawn_blocking(move || {
         let requested = PathBuf::from(path);
         if !filesystem::is_executable_path(&requested) {
@@ -79,7 +82,7 @@ pub async fn launch_application(path: String) -> Result<(), CommandError> {
                 message: "应用程序文件不存在".into(),
             });
         }
-        platform::launch_application(&canonical)
+        platform::launch_application(&canonical, run_as_administrator)
             .map_err(|source| crate::error::AppError::io(&canonical, source).into())
     })
     .await

@@ -47,6 +47,7 @@ import type {
   AppLanguage,
   AppPreferences,
   ApplicationDirectoryListing,
+  ApplicationShortcut,
   AudioMetadata,
   AudioPlaybackMode,
   BrowserViewMode,
@@ -94,6 +95,7 @@ export function App() {
   const [applicationPickerSelectedIndex, setApplicationPickerSelectedIndex] = useState(0);
   const [applicationPickerLoading, setApplicationPickerLoading] = useState(false);
   const [applicationPickerError, setApplicationPickerError] = useState("");
+  const [applicationPickerRunAsAdministrator, setApplicationPickerRunAsAdministrator] = useState(false);
   const [applicationLaunchError, setApplicationLaunchError] = useState("");
   const [browserRegion, setBrowserRegion] = useState<"navigation" | "files">("files");
   const [navigationIndex, setNavigationIndex] = useState(0);
@@ -429,6 +431,7 @@ export function App() {
   }, [applicationPickerListing, applicationPickerPath, roots]);
 
   const openApplicationPicker = useCallback(() => {
+    setApplicationPickerRunAsAdministrator(false);
     setApplicationPickerOpen(true);
     void browseApplications("");
   }, [browseApplications]);
@@ -436,6 +439,7 @@ export function App() {
   const closeApplicationPicker = useCallback(() => {
     applicationPickerRequestRef.current += 1;
     setApplicationPickerOpen(false);
+    setApplicationPickerRunAsAdministrator(false);
     setApplicationPickerError("");
   }, []);
 
@@ -459,10 +463,11 @@ export function App() {
       applicationShortcuts: bindApplicationShortcut(current.applicationShortcuts, {
         name: item.name.replace(/\.exe$/i, ""),
         path: item.path,
+        runAsAdministrator: applicationPickerRunAsAdministrator,
       }),
     }));
     closeApplicationPicker();
-  }, [browseApplications, closeApplicationPicker]);
+  }, [applicationPickerRunAsAdministrator, browseApplications, closeApplicationPicker]);
 
   const removeBoundApplication = useCallback((path: string) => {
     setPreferences((current) => ({
@@ -480,8 +485,8 @@ export function App() {
     applicationLaunchErrorTimerRef.current = window.setTimeout(() => setApplicationLaunchError(""), 4200);
   }, [t]);
 
-  const launchBoundApplication = useCallback((path: string) => {
-    void launchApplication(path).catch(showApplicationLaunchFailure);
+  const launchBoundApplication = useCallback((application: ApplicationShortcut) => {
+    void launchApplication(application.path, application.runAsAdministrator).catch(showApplicationLaunchFailure);
   }, [showApplicationLaunchFailure]);
 
   const applicationStartIndex = roots.length + preferences.favoriteFolders.length;
@@ -519,7 +524,7 @@ export function App() {
     }
     const applicationIndex = index - applicationStartIndex;
     if (applicationIndex >= 0 && applicationIndex < preferences.applicationShortcuts.length) {
-      launchBoundApplication(preferences.applicationShortcuts[applicationIndex].path);
+      launchBoundApplication(preferences.applicationShortcuts[applicationIndex]);
       return;
     }
     if (index === bindApplicationIndex) {
@@ -878,6 +883,9 @@ export function App() {
     }
     if (applicationPickerOpen) {
       if (action === "back") goBackInApplicationPicker();
+      else if (action === "togglePlayback") {
+        setApplicationPickerRunAsAdministrator((enabled) => !enabled);
+      }
       else if (action === "up") setApplicationPickerSelectedIndex((index) => Math.max(0, index - 1));
       else if (action === "down") {
         setApplicationPickerSelectedIndex((index) => Math.min(Math.max(0, applicationPickerItems.length - 1), index + 1));
@@ -1309,7 +1317,9 @@ export function App() {
         selectedIndex={applicationPickerSelectedIndex}
         loading={applicationPickerLoading}
         error={applicationPickerError}
+        runAsAdministrator={applicationPickerRunAsAdministrator}
         onSelect={setApplicationPickerSelectedIndex}
+        onRunAsAdministratorChange={setApplicationPickerRunAsAdministrator}
         onActivate={activateApplicationPickerItem}
         onBack={goBackInApplicationPicker}
         onClose={closeApplicationPicker}

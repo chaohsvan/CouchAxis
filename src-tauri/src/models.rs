@@ -76,6 +76,8 @@ pub struct FavoriteFolder {
 pub struct ApplicationShortcut {
     pub name: String,
     pub path: String,
+    #[serde(default)]
+    pub run_as_administrator: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

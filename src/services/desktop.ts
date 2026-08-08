@@ -155,9 +155,9 @@ export async function listApplicationDirectory(
   };
 }
 
-export async function launchApplication(path: string): Promise<void> {
+export async function launchApplication(path: string, runAsAdministrator = false): Promise<void> {
   if (isDesktop()) {
-    await invoke("launch_application", { path });
+    await invoke("launch_application", { path, runAsAdministrator });
   }
 }
 
@@ -203,7 +203,14 @@ export async function getPreferences(): Promise<AppPreferences> {
   const saved = window.localStorage.getItem("couchaxis.preferences");
   if (!saved) return DEFAULT_PREFERENCES;
   try {
-    return { ...DEFAULT_PREFERENCES, ...JSON.parse(saved) } as AppPreferences;
+    const preferences = { ...DEFAULT_PREFERENCES, ...JSON.parse(saved) } as AppPreferences;
+    return {
+      ...preferences,
+      applicationShortcuts: preferences.applicationShortcuts.map((shortcut) => ({
+        ...shortcut,
+        runAsAdministrator: shortcut.runAsAdministrator ?? false,
+      })),
+    };
   } catch {
     return DEFAULT_PREFERENCES;
   }

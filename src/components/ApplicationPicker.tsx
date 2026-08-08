@@ -1,4 +1,4 @@
-import { AppWindow, ChevronLeft, Folder, HardDrive, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { AppWindow, ChevronLeft, Folder, HardDrive, LoaderCircle, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
 import { displayPath } from "../lib/format";
@@ -15,7 +15,9 @@ interface ApplicationPickerProps {
   selectedIndex: number;
   loading: boolean;
   error: string;
+  runAsAdministrator: boolean;
   onSelect: (index: number) => void;
+  onRunAsAdministratorChange: (enabled: boolean) => void;
   onActivate: (item: ApplicationPickerItem) => void;
   onBack: () => void;
   onClose: () => void;
@@ -28,7 +30,9 @@ export function ApplicationPicker({
   selectedIndex,
   loading,
   error,
+  runAsAdministrator,
   onSelect,
+  onRunAsAdministratorChange,
   onActivate,
   onBack,
   onClose,
@@ -52,7 +56,20 @@ export function ApplicationPicker({
             <h2 title={path}>{path ? displayPath(path) : t("applicationPicker.drives")}</h2>
           </div>
         </div>
-        <button type="button" className="icon-button" onClick={onClose} title={t("common.close")}><X aria-hidden="true" /></button>
+        <div className="folder-picker-header-actions">
+          <button
+            type="button"
+            className={runAsAdministrator ? "switch-control application-admin-toggle active" : "switch-control application-admin-toggle"}
+            onClick={() => onRunAsAdministratorChange(!runAsAdministrator)}
+            title={t("applicationPicker.runAsAdministrator")}
+            aria-pressed={runAsAdministrator}
+          >
+            <ShieldCheck aria-hidden="true" />
+            <b>{t("applicationPicker.administrator")}</b>
+            <span aria-hidden="true" />
+          </button>
+          <button type="button" className="icon-button" onClick={onClose} title={t("common.close")}><X aria-hidden="true" /></button>
+        </div>
       </header>
 
       <div className="folder-picker-content">

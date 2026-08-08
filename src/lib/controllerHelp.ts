@@ -61,6 +61,7 @@ export const CONTROLLER_HELP_ITEMS: Record<ControllerHelpContext, ControllerHelp
   application: [
     { controls: ["vertical"], description: "help.action.moveSelection" },
     { controls: ["confirm"], description: "help.action.openOrBindApplication" },
+    { controls: ["alternate"], description: "help.action.toggleApplicationAdministrator" },
     { controls: ["back"], description: "help.action.closeApplicationPicker" },
     sharedHelp,
   ],

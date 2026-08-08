@@ -57,9 +57,12 @@ pub fn shutdown_system() -> io::Result<()> {
     }
 }
 
-pub fn launch_application(path: &Path) -> io::Result<()> {
+pub fn launch_application(path: &Path, run_as_administrator: bool) -> io::Result<()> {
     let shell_path = shell_compatible_path(path);
-    let operation: Vec<u16> = "open".encode_utf16().chain(Some(0)).collect();
+    let operation: Vec<u16> = shell_operation(run_as_administrator)
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     let file: Vec<u16> = shell_path
         .as_os_str()
         .encode_wide()
@@ -86,6 +89,14 @@ pub fn launch_application(path: &Path) -> io::Result<()> {
         Ok(())
     } else {
         Err(io::Error::from_raw_os_error(result as i32))
+    }
+}
+
+fn shell_operation(run_as_administrator: bool) -> &'static str {
+    if run_as_administrator {
+        "runas"
+    } else {
+        "open"
     }
 }
 
@@ -133,5 +144,11 @@ mod tests {
             shell_compatible_path(Path::new(r"\\?\D:\Program Files\Steam++\Steam++.exe")),
             PathBuf::from(r"D:\Program Files\Steam++\Steam++.exe")
         );
+    }
+
+    #[test]
+    fn selects_shell_operation_from_elevation_preference() {
+        assert_eq!(shell_operation(false), "open");
+        assert_eq!(shell_operation(true), "runas");
     }
 }

@@ -36,6 +36,7 @@ export interface FavoriteFolder {
 export interface ApplicationShortcut {
   name: string;
   path: string;
+  runAsAdministrator: boolean;
 }
 
 export interface RecentVideoProgress {
