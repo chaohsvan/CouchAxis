@@ -5,6 +5,12 @@ description = "Gamepad-first local video browser"
 authors = ["CouchAxis contributors"]
 edition = "2021"
 
+[[bin]]
+name = "couchaxis"
+path = "src/main.rs"
+test = false
+bench = false
+
 [lib]
 name = "couchaxis_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

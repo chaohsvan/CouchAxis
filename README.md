@@ -25,6 +25,8 @@ CouchAxis 是一款 Windows 本地独立运行、手柄优先的媒体文件浏�
 
 PRD 目标中的 libmpv 和 SDL2 尚未接入。对应迁移步骤、渲染表面决策和完成标准见[技术架构与实现路径](docs/TECHNICAL_IMPLEMENTATION.md)。
 
+CouchAxis 的 Windows 可执行文件始终请求管理员权限。每次启动时需要完成一次 UAC 确认；本次运行期间，从 CouchAxis 绑定和启动其他应用不再重复确认。
+
 ## 开发环境
 
 Windows 开发需要：
