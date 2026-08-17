@@ -384,34 +384,47 @@ pub async fn save_screenshot(
     .map_err(task_error)?
 }
 
+#[tauri::command]
+pub async fn prepare_screenshot_path(
+    app: AppHandle,
+    directory: String,
+    file_name: String,
+) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        screenshot_target(&app, directory, file_name)
+            .map(|target| target.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(task_error)?
+}
+
 fn save_screenshot_file(
     app: &AppHandle,
     directory: String,
     file_name: String,
     png_data: Vec<u8>,
 ) -> Result<String, CommandError> {
+    let target = screenshot_target(app, directory, file_name)?;
+    write_screenshot(&target, &png_data)?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+fn screenshot_target(
+    app: &AppHandle,
+    directory: String,
+    file_name: String,
+) -> Result<PathBuf, CommandError> {
     let directory = if directory.trim().is_empty() {
         preferences::default_screenshot_directory(app)
     } else {
         PathBuf::from(directory)
     };
-    write_screenshot(&directory, &file_name, &png_data)
-        .map(|target| target.to_string_lossy().into_owned())
+    prepare_screenshot_target(&directory, &file_name)
 }
 
-fn write_screenshot(
-    directory: &Path,
-    file_name: &str,
-    png_data: &[u8],
-) -> Result<PathBuf, CommandError> {
-    if !png_data.starts_with(PNG_SIGNATURE) {
-        return Err(CommandError {
-            code: "invalid_screenshot",
-            message: "截图数据不是有效的 PNG 图片".into(),
-        });
-    }
+fn prepare_screenshot_target(directory: &Path, file_name: &str) -> Result<PathBuf, CommandError> {
     std::fs::create_dir_all(directory)
-        .map_err(|source| crate::error::AppError::io(directory, source))?;
+        .map_err(|source| crate::error::AppError::io(&directory, source))?;
     let safe_name: String = file_name
         .chars()
         .map(|character| match character {
@@ -432,9 +445,19 @@ fn write_screenshot(
         target = directory.join(format!("{stem}_{duplicate}.png"));
         duplicate += 1;
     }
-    std::fs::write(&target, png_data)
-        .map_err(|source| crate::error::AppError::io(&target, source))?;
     Ok(target)
+}
+
+fn write_screenshot(target: &Path, png_data: &[u8]) -> Result<(), CommandError> {
+    if !png_data.starts_with(PNG_SIGNATURE) {
+        return Err(CommandError {
+            code: "invalid_screenshot",
+            message: "截图数据不是有效的 PNG 图片".into(),
+        });
+    }
+    std::fs::write(target, png_data)
+        .map_err(|source| crate::error::AppError::io(target, source))?;
+    Ok(())
 }
 
 fn read_subtitle_file(path: String) -> Result<SubtitleFile, CommandError> {
@@ -456,6 +479,7 @@ fn read_subtitle_file(path: String) -> Result<SubtitleFile, CommandError> {
     let bytes = std::fs::read(path).map_err(|source| crate::error::AppError::io(path, source))?;
     let contents = decode_text(&bytes);
     Ok(SubtitleFile {
+        path: path.to_string_lossy().into_owned(),
         file_name: path
             .file_name()
             .map(|value| value.to_string_lossy().into_owned())
@@ -517,8 +541,9 @@ mod tests {
             "couchaxis-screenshot-{}-{unique}",
             std::process::id()
         ));
-        let target = write_screenshot(&directory, "Movie: 01?.png", PNG_SIGNATURE)
-            .expect("write screenshot");
+        let target = prepare_screenshot_target(&directory, "Movie: 01?.png")
+            .expect("prepare screenshot target");
+        write_screenshot(&target, PNG_SIGNATURE).expect("write screenshot");
 
         assert_eq!(
             target.file_name().and_then(|value| value.to_str()),
@@ -529,6 +554,30 @@ mod tests {
             PNG_SIGNATURE
         );
         std::fs::remove_dir_all(directory).expect("remove screenshot directory");
+    }
+
+    #[test]
+    fn returns_the_source_path_with_subtitle_contents() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "couchaxis-subtitle-{}-{unique}",
+            std::process::id()
+        ));
+        let target = directory.join("Movie.srt");
+        std::fs::create_dir_all(&directory).expect("create subtitle directory");
+        std::fs::write(&target, "1\n00:00:01,000 --> 00:00:02,000\nHello\n")
+            .expect("write subtitle");
+
+        let subtitle =
+            read_subtitle_file(target.to_string_lossy().into_owned()).expect("read subtitle");
+
+        assert_eq!(subtitle.path, target.to_string_lossy());
+        assert_eq!(subtitle.file_name, "Movie.srt");
+        assert!(subtitle.contents.contains("Hello"));
+        std::fs::remove_dir_all(directory).expect("remove subtitle directory");
     }
 
     #[test]

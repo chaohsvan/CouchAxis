@@ -70,8 +70,9 @@ export interface AudioMetadata {
 export type AudioPlaybackMode = "sequence" | "shuffle" | "repeatOne";
 
 export interface SubtitleFile {
-    fileName: string;
-    contents: string;
+  path: string;
+  fileName: string;
+  contents: string;
 }
 
 export type SubtitleEntryKind = "folder" | "subtitle";

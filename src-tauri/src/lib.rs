@@ -8,14 +8,15 @@ mod preferences;
 use commands::{
     configure_elevated_application, exit_application, find_matching_subtitle, get_last_path,
     get_preferences, launch_application, list_application_directory, list_audio_queue,
-    list_directory, list_roots, list_subtitle_directory, read_audio_metadata, read_subtitle,
-    remove_elevated_application, save_last_path, save_preferences, save_screenshot,
-    shutdown_system,
+    list_directory, list_roots, list_subtitle_directory, prepare_screenshot_path,
+    read_audio_metadata, read_subtitle, remove_elevated_application, save_last_path,
+    save_preferences, save_screenshot, shutdown_system,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_libmpv::init())
         .invoke_handler(tauri::generate_handler![
             exit_application,
             shutdown_system,
@@ -34,6 +35,7 @@ pub fn run() {
             save_preferences,
             read_subtitle,
             find_matching_subtitle,
+            prepare_screenshot_path,
             save_screenshot
         ])
         .run(tauri::generate_context!())

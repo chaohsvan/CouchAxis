@@ -5,7 +5,7 @@ CouchAxis 是一款 Windows 本地独立运行、手柄优先的媒体文件浏�
 ## 文档
 
 - [程序功能说明](docs/FUNCTIONAL_OVERVIEW.md)：用户流程、格式范围、视频/音乐/图片功能、逐页面手柄映射、设置、限制和验收清单。
-- [技术架构与实现路径](docs/TECHNICAL_IMPLEMENTATION.md)：当前代码架构、IPC 契约、关键算法、构建测试，以及 libmpv、SDL2 和跨平台迁移路径。
+- [技术架构与实现路径](docs/TECHNICAL_IMPLEMENTATION.md)：当前代码架构、libmpv 播放契约、IPC、构建测试，以及 SDL2 和跨平台迁移路径。
 
 ## 当前能力
 
@@ -21,9 +21,9 @@ CouchAxis 是一款 Windows 本地独立运行、手柄优先的媒体文件浏�
 
 ## 重要技术状态
 
-当前视频和音频播放使用 WebView2 的 HTMLMediaElement，手柄使用浏览器 Gamepad API。文件能被识别并显示，不代表当前 Windows 媒体栈一定能解码其编码格式。
+Windows 桌面版视频使用内置 libmpv/FFmpeg 后端，支持 HEVC 10-bit、DTS、MKV 和 ASS 等 WebView2 经常无法直接处理的编码与封装；音频仍使用 WebView2 的 HTMLMediaElement。浏览器演示模式继续使用 HTML `<video>`，不代表桌面版的实际解码能力。
 
-PRD 目标中的 libmpv 和 SDL2 尚未接入。对应迁移步骤、渲染表面决策和完成标准见[技术架构与实现路径](docs/TECHNICAL_IMPLEMENTATION.md)。
+libmpv 已接入并固定运行库版本；SDL2 尚未接入，手柄仍使用浏览器 Gamepad API。实现边界和后续跨平台工作见[技术架构与实现路径](docs/TECHNICAL_IMPLEMENTATION.md)。
 
 CouchAxis 的 Windows 可执行文件始终请求管理员权限。每次启动时需要完成一次 UAC 确认；本次运行期间，从 CouchAxis 绑定和启动其他应用不再重复确认。
 
@@ -42,6 +42,9 @@ Windows 开发需要：
 ```powershell
 # 安装前端依赖
 pnpm install
+
+# 下载并校验固定版本的 libmpv 运行库
+.\scripts\setup-libmpv.ps1
 
 # 浏览器演示模式，不访问真实磁盘
 pnpm dev

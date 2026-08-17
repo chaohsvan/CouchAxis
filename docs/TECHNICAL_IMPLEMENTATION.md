@@ -1,8 +1,8 @@
 # CouchAxis 技术架构与实现路径
 
 > 文档版本：0.1.0-current
-> 最后核对：2026-08-08
-> 本文同时描述“当前代码已经实现的方案”和“迁移到 libmpv / SDL2 的目标方案”。未完成项会明确标记为规划。
+> 最后核对：2026-08-17
+> 本文描述当前代码实现和后续 SDL2、跨平台工作；未完成项会明确标记为规划。
 
 ## 1. 技术目标
 
@@ -24,14 +24,15 @@ CouchAxis 的技术设计围绕以下约束展开：
 | 系统核心 | Rust 2021 | 文件系统、偏好、字幕读取、音频元数据、截图落盘 |
 | UI | React 19 + TypeScript | 页面状态、媒体控制、手柄动作分发、国际化 |
 | 构建 | Vite 8 + pnpm | 开发服务器、类型检查、前端产物 |
-| 视频/音频 | HTMLMediaElement + WebView2 | 当前媒体解码与播放 |
+| 视频 | libmpv + FFmpeg + tauri-plugin-libmpv | 桌面视频解码、渲染、字幕与截图 |
+| 音频 | HTMLMediaElement + WebView2 | 当前音乐解码与播放 |
 | 频谱 | Web Audio API | 音频频率分析和 Canvas 绘制 |
 | 手柄 | Navigator Gamepad API | 当前轮询、布局识别和动作映射 |
 | 元数据 | lofty 0.24 | 标题、艺术家、专辑、歌词和内置封面 |
 | Windows 磁盘 | windows-sys | `GetLogicalDrives`、`GetDriveTypeW` |
 | 测试 | Vitest + Rust unit tests | 纯逻辑和 Rust 核心回归 |
 
-目标技术栈中的 libmpv 和 SDL2 尚未接入。当前架构保留了迁移所需的动作层、组件句柄和平台适配边界，但不能把当前播放器描述为 libmpv 实现。
+libmpv 已接入 Windows 桌面视频链路，SDL2 尚未接入。浏览器演示视频和桌面音乐仍使用 HTMLMediaElement，手柄仍由 Gamepad API 驱动。
 
 ## 3. 总体架构
 
@@ -41,7 +42,8 @@ flowchart LR
     KB["Keyboard"] --> INPUT
     INPUT --> APP["App 状态协调器"]
     APP --> UI["React 页面组件"]
-    UI --> MEDIA["video / audio / image / Web Audio"]
+    UI --> VIDEO["videoPlayback / libmpv"]
+    UI --> MEDIA["audio / image / Web Audio"]
     APP --> ADAPTER["services/desktop.ts"]
     ADAPTER -->|"Tauri IPC"| CMD["Rust commands.rs"]
     ADAPTER -->|"开发模式"| MOCK["固定演示数据"]
@@ -97,8 +99,10 @@ CouchAxis/
 │  │  ├─ holdAction.ts             退出/关机长按进度
 │  │  ├─ imageViewport.ts          图片适应、缩放和平移边界
 │  │  └─ controllerHelp.ts         页面级动作说明数据
-│  └─ services/desktop.ts          桌面/浏览器双实现适配层
+│  ├─ services/desktop.ts          桌面/浏览器双实现适配层
+│  └─ services/videoPlayback.ts    libmpv 会话、状态归约与命令串行化
 └─ src-tauri/
+   ├─ lib/                         libmpv 运行库许可与发布说明
    ├─ tauri.conf.json              窗口、资源协议和打包配置
    ├─ capabilities/default.json    Tauri 权限
    └─ src/
@@ -375,15 +379,15 @@ button / axis
 
 ### 11.1 当前播放后端
 
-`Player.tsx` 使用 HTML `<video>`：
+桌面版 `Player.tsx` 通过 `services/videoPlayback.ts` 控制 libmpv；浏览器演示模式保留 HTML `<video>` 后备实现。播放适配层负责：
 
-- `currentTime` 实现跳转。
-- `volume` / `muted` 实现音量。
-- `playbackRate` 实现倍速。
-- React 状态同步播放、时长、音量、错误和速度。
-- 倍速阶梯由 `lib/playbackRate.ts` 单独维护并测试。
-- `loadedmetadata` 读取 `videoWidth / videoHeight`，通过固定比例容器约束视频画面；窗口尺寸变化和原生全屏切换只改变容器尺寸，不改变视频比例。
-- 全屏命令在窗口状态切换完成前锁定，防止手柄或键盘连发触发相互覆盖的异步窗口操作。
+- 串行化初始化、销毁和播放命令，避免 React StrictMode 双挂载或快速切片破坏全局 mpv 实例。
+- 给状态和事件附加 `sessionId`，忽略已经替换的会话事件。
+- 观察 `pause`、`time-pos`、`duration`、`volume`、`mute`、`speed`、画面尺寸和结束状态，并归约为 React 可消费的稳定状态。
+- 使用 `setVideoMarginRatio` 将 mpv 画面约束到透明 WebView 下方的视频框，React 顶栏、控制栏、OSD 和模态层仍位于上层。
+- 通过 `hwdec=auto-safe` 启用安全的自动硬件解码回退，通过 `gpu-next` 输出画面。
+- 保留 `PlayerHandle` 的播放、跳转、音量、字幕、截图和专注模式命令边界，输入路由无需知道底层内核。
+- 浏览器后备实现继续使用 HTMLMediaElement，便于无 Tauri 环境下开发 UI。
 
 ### 11.2 续播进度
 
@@ -394,7 +398,7 @@ button / axis
 - 播放结束。
 - 关闭按钮与组件卸载。
 
-`App.tsx` 把上报交给纯函数 `updateRecentVideoProgress()`：位置向下取整到秒，同一路径按 Windows 路径语义不区分大小写替换，结果按最近更新顺序放在数组首位并截断为三个。位置小于 5 秒、总时长无效或剩余不超过 15 秒时删除该路径记录。再次打开视频后，`loadedmetadata` 取得真实时长，再校验并设置 `currentTime`，避免在媒体元数据尚未就绪时跳转。
+`App.tsx` 把上报交给纯函数 `updateRecentVideoProgress()`：位置向下取整到秒，同一路径按 Windows 路径语义不区分大小写替换，结果按最近更新顺序放在数组首位并截断为三个。位置小于 5 秒、总时长无效或剩余不超过 15 秒时删除该路径记录。再次打开视频后，libmpv 发出 `file-loaded`，适配层读取真实时长、校验续播位置、完成跳转后再开始播放。
 
 ### 11.3 全屏播放反馈
 
@@ -406,35 +410,28 @@ button / axis
 sequenceDiagram
     participant App
     participant Rust as Rust IPC
-    participant Parser as subtitles.ts
+    participant MPV as libmpv/libass
     participant Player
     App->>Rust: find_matching_subtitle(videoPath)
     Rust-->>App: SubtitleFile 或 null
-    App->>Parser: parseSubtitles(fileName, contents)
-    Parser-->>App: SubtitleCue[]
-    App->>Player: subtitleCues
-    Player->>Player: timeupdate 与 100 ms 校准查找 activeSubtitle
+    App->>Player: subtitlePath
+    Player->>MPV: sub-add(path, select)
+    MPV-->>Player: 按视频时钟渲染字幕
 ```
 
-- SRT 按空块与 `-->` 时间行解析。
-- ASS/SSA 读取 `Dialogue:` 的时间和第 10 列以后文本。
-- 清理 `\N`、HTML 标签和 ASS 花括号样式。
-- 播放时除 `timeupdate` 外每 100 ms 读取媒体元素的真实时间，避免窗口全屏切换延迟事件时丢失短字幕。
-- `activeSubtitle` 返回当前时间内的全部活动字幕并按换行连接，避免重叠字幕只显示第一条。
-- `subtitleFontSize` 转换为覆盖层字号类，普通播放和专注模式使用同一份偏好；窄屏断点提供对应的三档固定字号。
-- 当前每次更新时间使用线性筛选活动字幕；字幕数量很大时可改为二分查找起点后扫描重叠区间。
+- Rust 返回字幕内容的同时返回真实源路径，桌面版把路径交给 mpv `sub-add`。
+- `sub-auto=no` 禁止 mpv 另外自动扫描同名外部字幕，避免与 CouchAxis 自动匹配逻辑重复加载。
+- 内封字幕和手动 SRT/ASS/SSA 由 libass 渲染；字幕开关映射到 `sub-visibility`，清空映射到 `sid=no`。
+- 三档字幕字号映射到 mpv `sub-scale`，截图使用同一字幕渲染状态。
+- 浏览器演示模式继续使用 `subtitles.ts` 的 SRT/ASS 纯文本解析与前端时钟。
 
 ### 11.5 截图链路
 
-1. 校验视频已经具有当前帧和尺寸。
-2. 创建与原视频分辨率相同的 Canvas。
-3. `drawImage(video)` 绘制当前帧。
-4. 如有字幕，按当前字幕字号档位缩放、按宽度折行并描边绘制到底部。
-5. 编码 PNG Blob，再转换为字节数组。
-6. IPC 发送到 Rust。
-7. Rust 校验 PNG 签名、清理 Windows 非法文件名并避免覆盖。
+1. Rust 根据设置解析目录，自动创建目录、清理 Windows 非法文件名并选择不覆盖的目标路径。
+2. 前端调用 mpv `screenshot-to-file <path> subtitles`。
+3. libmpv 直接写入包含当前字幕的 PNG，不经过 Canvas 或 JSON 字节数组。
 
-当前字节数组通过 JSON IPC 传输，大分辨率截图会产生额外内存和序列化开销。迁移到 libmpv 后应优先由原生后端直接截图到目标文件。
+浏览器演示模式仍使用 Canvas 截取 HTMLVideoElement 当前帧，维持无桌面后端时的交互演示。
 
 ### 11.6 视频专注模式
 
@@ -442,7 +439,7 @@ sequenceDiagram
 - 通过 `services/desktop.ts` 调用 Tauri 原生窗口全屏。
 - 记录全屏是否由专注模式开启，只恢复自己创建的全屏状态。
 - `R3` 使用同一动作进入和退出。
-- 专注模式给视频框施加肉眼不可见的非单位颜色滤镜，阻止 WebView2 将视频提升到字幕之上的独立合成层。
+- 视频页根层和视频框保持透明，使下层 libmpv 画面可见；其他页面保持不透明背景。
 - 组件卸载时执行全屏清理，防止直接关闭媒体后窗口残留全屏。
 - 浏览器开发模式监听 `fullscreenchange`，用户按 Esc 退出浏览器全屏时同步退出专注状态。
 
@@ -583,7 +580,7 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 - `assetProtocol.scope` 当前为 `**`，正式发布前应评估按磁盘或用户选择路径收紧。
 - 偏好写入应升级为临时文件 + 原子替换。
 - 应增加日志文件和可控日志级别，避免只能从 UI 错误判断问题。
-- 大截图不应通过 JSON 数组传输。
+- 桌面视频截图已不经过 JSON；浏览器演示后备截图仍会传输字节数组。
 - 文件扩展名白名单应与实际后端能力或探测结果分离展示。
 
 ## 17. 开发环境
@@ -601,10 +598,11 @@ maxPanY = max(0, (渲染高 - 视口高) / 2)
 
 ```powershell
 pnpm install
+.\scripts\setup-libmpv.ps1
 rustup default stable-msvc
 ```
 
-如果 `rustup` 已正确安装 MSVC 工具链，第二条无需重复执行。
+如果 `rustup` 已正确安装 MSVC 工具链，最后一条无需重复执行。libmpv 脚本会校验固定归档和 DLL 的 SHA-256，已有正确文件时可幂等跳过下载。
 
 ### 17.3 开发命令
 
@@ -689,18 +687,18 @@ pnpm tauri build
 
 四项全部通过后，再执行 Windows 手柄与媒体样本冒烟测试。
 
-## 19. libmpv 迁移路径
+## 19. libmpv 当前实现与后续工作
 
-### 19.1 目标
+### 19.1 已实现目标
 
 - 稳定播放 MKV、AVI、FLV、WMV 等常见封装。
 - 使用 mpv 的硬件解码、音轨和字幕轨能力。
 - 将播放状态通过稳定事件契约同步到 React。
 - 保留当前 UI、手柄动作和设置体验。
 
-### 19.2 阶段 A：先抽象播放契约
+### 19.2 播放契约（已完成）
 
-在接入 mpv 前定义后端无关契约：
+`services/videoPlayback.ts` 当前提供以下等价契约，并额外包含绝对跳转、静音、字幕、截图、画面留白和会话状态：
 
 ```ts
 interface PlaybackState {
@@ -724,59 +722,48 @@ interface PlaybackBackend {
 }
 ```
 
-先让现有 HTMLMediaElement 实现该接口并保持行为不变。完成条件是 `Player` 不再直接依赖 `<video>` 的命令式细节。
+桌面分支的 `Player` 已不直接读取 HTMLVideoElement；浏览器演示分支保留原实现。适配层测试覆盖旧会话过滤、StrictMode 取消、命令串行化、续播顺序、错误保留和幂等销毁。
 
-### 19.3 阶段 B：Rust mpv 引擎
+### 19.3 libmpv 引擎（已完成）
 
-建议结构：
+当前结构：
 
 ```text
-src-tauri/src/playback/
-├─ mod.rs          PlaybackEngine 公共接口
-├─ mpv.rs          libmpv 生命周期、属性和命令
-├─ events.rs       状态事件模型
-└─ surface.rs      平台渲染表面
+src/services/videoPlayback.ts     前端会话、状态归约和命令队列
+tauri-plugin-libmpv 0.3.2         Tauri command、事件和 libmpv 生命周期
+libmpv-wrapper.dll                稳定动态加载边界
+libmpv-2.dll                      固定版本的 Windows LGPL 运行库
 ```
 
-实现要求：
+- 插件通过 wrapper 隔离动态库 ABI，并按 Tauri window label 管理实例。
+- 属性变化和播放事件通过 Tauri event 发给前端，前端 reducer 只接受当前 `sessionId`。
+- 关闭媒体时先停止监听再销毁实例；窗口关闭事件也由插件先销毁 mpv。
+- 播放命令在单一 Promise 队列中排序，不让快速按键或组件重建并发操作全局实例。
 
-- mpv 句柄只由专用线程拥有。
-- Tauri command 通过 channel 向播放线程发送命令。
-- 播放线程观察 `time-pos`、`duration`、`pause`、`volume`、`speed`、轨道和错误。
-- 状态变化通过 Tauri event 发给前端。
-- 关闭媒体和退出应用时有明确的线程终止与句柄销毁顺序。
-- 所有 FFI 返回值转换为稳定错误码，不能把裸指针或 C 字符串跨线程泄漏。
+### 19.4 Windows 渲染表面决策（当前方案）
 
-### 19.4 阶段 C：渲染表面决策
-
-必须先做 Windows 原型，再确定跨平台方案：
+当前版本选择 `wid` 嵌入与透明 WebView：
 
 | 方案 | 优点 | 风险 |
 | --- | --- | --- |
-| Windows 子 HWND + mpv `wid` | 最快验证播放能力 | WebView 与原生子窗口存在 airspace，React OSD 叠加困难 |
+| Windows 子 HWND + mpv `wid` | **当前采用**；实现直接、硬件解码成熟 | 依赖透明 WebView 和画面留白，需持续验证多屏/DPI/GPU |
 | libmpv render API + 自定义图形表面 | 可控、适合跨平台 | Tauri/WebView 合成和 GPU 生命周期复杂 |
 | 独立播放窗口 + React 控制窗口 | 边界清晰、原型快 | 用户体验和窗口同步较差 |
 
-推荐决策门：
+透明 WebView 位于 mpv 画面上方，因此 React 控制层、OSD 和模态层可以显示；视频框的 DOM 矩形转换成四边比例并传给 mpv。发布前仍需覆盖 4K、多显示器 DPI、最小化恢复和显卡设备丢失；若该组合在目标机器不稳定，再评估 composition/render API。
 
-1. 验证 4K 视频、窗口缩放、全屏和多显示器。
-2. 验证 React 字幕/控制层是否能可靠叠加。
-3. 验证窗口最小化、恢复和设备丢失。
-4. 达不到同窗叠加要求时，优先转向 render API，不在 HWND airspace 上继续堆补丁。
+### 19.5 字幕与截图（已完成）
 
-### 19.5 阶段 D：字幕、截图和音频统一
+- 内封字幕和外部 SRT/ASS/SSA 交给 mpv/libass；手动字幕使用 `sub-add`，清空使用 `sid=no`。
+- 截图使用 mpv 原生命令直接写文件，避免 Canvas 和 JSON 大数组。
+- 音频继续使用 HTMLAudioElement，以保留 Web Audio 频谱；是否统一到 mpv 属于后续独立决策。
 
-- 简单字幕可以继续由 React 显示，复杂 ASS 建议交给 mpv/libass。
-- 手动字幕通过 mpv `sub-add`，清空使用 `sub-remove` 或关闭字幕轨。
-- 截图改用 mpv 原生命令直接写文件，避免 Canvas 和 JSON 大数组。
-- 音频可以继续使用 HTMLAudioElement，也可以统一到 mpv；应先评估频谱数据如何从原生音频链路提供给 Web UI。
+### 19.6 运行时打包（已完成基础链路）
 
-### 19.6 阶段 E：运行时打包
-
-- 明确 libmpv DLL、依赖 DLL 和许可文件的来源与版本。
-- 在 Tauri bundle resources 中包含运行时。
-- 启动时校验 DLL 可加载并给出可诊断错误。
-- 安装版和便携 EXE 都要在无开发环境的干净 Windows 虚拟机验证。
+- `scripts/setup-libmpv.ps1` 固定 wrapper、libmpv、7zr、许可证 URL 和 SHA-256，可重复下载并复核。
+- Tauri `bundle.resources` 将两个 DLL、LGPL 文本和第三方说明放入安装目录的 `lib` 子目录。
+- 插件初始化错误会进入播放器错误状态；后续仍应增加面向用户的 DLL 诊断详情。
+- 安装版仍需在无开发环境的干净 Windows 10/11 虚拟机持续验证。
 
 ## 20. SDL2 迁移路径
 
@@ -850,12 +837,10 @@ SDL event loop
 
 ### 播放后端
 
-1. 抽象现有 HTML 播放后端。
-2. 建立 Rust mpv 引擎与事件模型。
-3. 完成 Windows 渲染表面原型决策。
-4. 迁移视频加载、播放、跳转、音量和倍速。
-5. 迁移字幕和截图。
-6. 打包 libmpv 运行时并做干净系统验证。
+1. 在 Windows 10/11 和多种 GPU 上补齐 4K、HDR、多屏 DPI 与最小化恢复样本矩阵。
+2. 增加音轨、字幕轨和章节选择 UI。
+3. 增加可导出的 libmpv 日志与初始化诊断。
+4. 在干净虚拟机验证 NSIS/MSI 安装、卸载和 DLL 替换。
 
 ### 输入与跨平台
 

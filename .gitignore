@@ -3,6 +3,9 @@ dist/
 coverage/
 src-tauri/target/
 src-tauri/target-*/
+src-tauri/lib/*.dll
+src-tauri/lib/*.7z
+src-tauri/lib/*.zip
 .idea/
 .vscode/
 *.log

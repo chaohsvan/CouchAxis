@@ -112,6 +112,7 @@ export function App() {
   const [error, setError] = useState("");
   const [media, setMedia] = useState<FileEntry | null>(null);
   const [subtitleName, setSubtitleName] = useState("");
+  const [subtitleFilePath, setSubtitleFilePath] = useState("");
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [subtitlePickerOpen, setSubtitlePickerOpen] = useState(false);
   const [subtitlePath, setSubtitlePath] = useState("");
@@ -604,6 +605,7 @@ export function App() {
     else {
       setMedia(entry);
       setSubtitleName("");
+      setSubtitleFilePath("");
       setSubtitleCues([]);
       if (entry.kind === "audio") {
         const requestId = ++audioQueueRequestRef.current;
@@ -660,12 +662,14 @@ export function App() {
   useEffect(() => {
     const requestId = ++subtitleAutoRequestRef.current;
     setSubtitleName("");
+    setSubtitleFilePath("");
     setSubtitleCues([]);
     if (!media || media.kind !== "video") return;
     void findMatchingSubtitle(media.path)
       .then((subtitle) => {
         if (subtitleAutoRequestRef.current !== requestId || !subtitle) return;
         setSubtitleName(subtitle.fileName);
+        setSubtitleFilePath(subtitle.path);
         setSubtitleCues(parseSubtitles(subtitle.fileName, subtitle.contents));
       })
       .catch(() => undefined);
@@ -769,6 +773,7 @@ export function App() {
     const nextIndex = (currentIndex + direction + entries.length) % entries.length;
     setMedia(entries[nextIndex]);
     setSubtitleName("");
+    setSubtitleFilePath("");
     setSubtitleCues([]);
   }, [listing, media]);
 
@@ -802,7 +807,9 @@ export function App() {
   const activateSubtitleItem = useCallback(async (item: SubtitlePickerItem) => {
     if (item.kind === "none") {
       subtitleAutoRequestRef.current += 1;
+      playerRef.current?.clearSubtitles();
       setSubtitleName("");
+      setSubtitleFilePath("");
       setSubtitleCues([]);
       setSubtitlePickerOpen(false);
       return;
@@ -818,6 +825,7 @@ export function App() {
     try {
       const subtitle = await readSubtitle(item.path);
       setSubtitleName(subtitle.fileName);
+      setSubtitleFilePath(subtitle.path);
       setSubtitleCues(parseSubtitles(subtitle.fileName, subtitle.contents));
       setSubtitlePickerOpen(false);
     } catch (reason) {
@@ -1197,6 +1205,7 @@ export function App() {
           media={media}
           source={mediaSource(media.path)}
           subtitleName={subtitleName}
+          subtitlePath={subtitleFilePath}
           subtitleCues={subtitleCues}
           subtitleFontSize={preferences.subtitleFontSize}
           screenshotDirectory={preferences.screenshotDirectory}

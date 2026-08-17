@@ -1,7 +1,7 @@
 :root {
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   color: #f2f4f3;
-  background: #0b0d0e;
+  background: transparent;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --bg: #0b0d0e;
@@ -17,7 +17,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
 button, input { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -204,19 +204,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); ou
 .application-picker[aria-busy="true"] .folder-picker-row { opacity: .58; cursor: wait; }
 .application-launch-error { position: fixed; z-index: 160; top: 26px; right: 28px; max-width: min(540px, calc(100vw - 56px)); padding: 13px 17px; border: 1px solid #74483f; border-left: 4px solid var(--accent); border-radius: 4px; color: #f7e6e2; background: rgba(48, 25, 21, .96); box-shadow: 0 14px 34px rgba(0, 0, 0, .38); font-size: 13px; overflow-wrap: anywhere; }
 
-.player-shell { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background: #050606; }
-.player-shell.focus-mode { background: #000; cursor: none; }
-.player-shell.focus-mode .video-surface { background: #000; }
+.player-shell { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+.player-shell.focus-mode { background: transparent; cursor: none; }
+.player-shell.focus-mode .video-surface { background: transparent; }
 .player-shell.focus-mode .player-topbar,
 .player-shell.focus-mode .player-controls { visibility: hidden; opacity: 0; pointer-events: none; }
 .player-shell.focus-mode .subtitle-overlay { bottom: 7%; }
 .player-shell.focus-mode .screenshot-notice { top: 24px; }
 .player-shell.focus-mode .player-placeholder,
 .player-shell.focus-mode .player-error { inset: 0; }
-.video-viewport { position: absolute; z-index: 0; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #050606; }
+.video-viewport { position: absolute; z-index: 0; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; background: transparent; }
 /* Keep WebView2 video and HTML overlays on one stable composition path across mode changes. */
-.video-frame { --video-aspect: 1.7777778; position: relative; isolation: isolate; flex: 0 0 auto; width: min(100%, calc(100vh * var(--video-aspect))); height: min(100%, calc(100vw / var(--video-aspect))); overflow: hidden; contain: layout paint; background: #000; filter: brightness(.9999); }
-.video-surface { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: #050606; }
+.video-frame { --video-aspect: 1.7777778; position: relative; isolation: isolate; flex: 0 0 auto; width: min(100%, calc(100vh * var(--video-aspect))); height: min(100%, calc(100vw / var(--video-aspect))); overflow: hidden; contain: layout paint; background: transparent; }
+.video-surface { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; display: block; object-fit: contain; background: transparent; }
 .player-topbar { position: absolute; z-index: 6; inset: 0 0 auto; height: 86px; display: flex; align-items: center; gap: 16px; padding: 18px 28px; background: #090b0b; border-bottom: 1px solid rgba(255,255,255,.12); }
 .player-topbar > div { min-width: 0; display: grid; gap: 4px; }
 .player-topbar strong, .player-topbar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

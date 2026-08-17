@@ -1,0 +1,29 @@
+CouchAxis libmpv runtime notices
+================================
+
+libmpv-wrapper v0.1.1
+---------------------
+Copyright belongs to the libmpv-wrapper contributors.
+License: GNU Lesser General Public License, version 2.1.
+Source: https://github.com/nini22P/libmpv-wrapper/tree/v0.1.1
+Binary release: https://github.com/nini22P/libmpv-wrapper/releases/tag/v0.1.1
+Bundled DLL SHA-256: 0d5adead5f175c55e0790a80924ec0a2636f72e3675c79a6d9d9568b2ed2384a
+
+mpv and FFmpeg
+--------------
+Copyright belongs to the mpv, FFmpeg, and dependency contributors.
+mpv source: https://github.com/mpv-player/mpv
+FFmpeg source: https://github.com/FFmpeg/FFmpeg
+Windows build scripts: https://github.com/zhongfly/mpv-winbuild/tree/2026-08-15-e167836802
+Binary release: https://github.com/zhongfly/mpv-winbuild/releases/tag/2026-08-15-e167836802
+Bundled DLL SHA-256: 4c4f35e757fdcbe1044f0c08da5b848a642361d95c19936187a4af5f4c7580a0
+
+The selected mpv-winbuild artifact is named
+mpv-dev-lgpl-x86_64-20260815-git-e167836802.7z. Its distributor describes
+the build as libmpv under LGPL-2.1-or-later with FFmpeg statically linked
+under LGPL version 3. The distributor also advises users to perform their own
+license review. The corresponding LGPL 2.1 and LGPL 3.0 texts are bundled next
+to this notice. Users may replace libmpv-2.dll and libmpv-wrapper.dll with
+interface-compatible modified versions.
+
+No source changes to these two DLLs are maintained in the CouchAxis project.

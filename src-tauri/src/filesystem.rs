@@ -17,7 +17,7 @@ use std::os::windows::fs::MetadataExt;
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
 
 const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "mkv", "avi", "mov", "flv", "wmv", "m4v", "webm", "mpeg", "mpg", "ts", "m2ts",
+    "mp4", "mkv", "avi", "mov", "flv", "wmv", "m4v", "webm", "mpeg", "mpg", "mpv", "ts", "m2ts",
 ];
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "wav", "aac", "m4a", "ogg", "opus", "wma", "aiff", "aif", "alac",
@@ -391,6 +391,7 @@ mod tests {
     fn recognizes_video_extensions_case_insensitively() {
         assert!(is_video_path(Path::new("movie.MKV")));
         assert!(is_video_path(Path::new("clip.mp4")));
+        assert!(is_video_path(Path::new("mpeg-video.MPV")));
         assert!(!is_video_path(Path::new("subtitle.srt")));
         assert!(!is_video_path(Path::new("README")));
     }

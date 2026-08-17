@@ -157,6 +157,7 @@ pub struct AudioMetadata {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SubtitleFile {
+    pub path: String,
     pub file_name: String,
     pub contents: String,
 }

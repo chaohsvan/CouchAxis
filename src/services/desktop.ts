@@ -252,11 +252,13 @@ export async function readSubtitle(path: string): Promise<SubtitleFile> {
   const fileName = path.split(/[\\/]/).pop() ?? "sample.srt";
   if (fileName.toLowerCase().endsWith(".ass") || fileName.toLowerCase().endsWith(".ssa")) {
     return {
+      path,
       fileName,
       contents: "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,CouchAxis preview",
     };
   }
   return {
+    path,
     fileName,
     contents: "1\n00:00:01,000 --> 00:00:05,000\nCouchAxis preview\n",
   };
@@ -276,5 +278,10 @@ export async function findMatchingSubtitle(videoPath: string): Promise<SubtitleF
 export async function saveScreenshot(directory: string, fileName: string, pngData: number[]): Promise<string> {
   if (isDesktop()) return invoke<string>("save_screenshot", { directory, fileName, pngData });
   await new Promise((resolve) => window.setTimeout(resolve, 80));
+  return `${directory.replace(/[\\/]+$/, "")}\\${fileName}`;
+}
+
+export async function prepareScreenshotPath(directory: string, fileName: string): Promise<string> {
+  if (isDesktop()) return invoke<string>("prepare_screenshot_path", { directory, fileName });
   return `${directory.replace(/[\\/]+$/, "")}\\${fileName}`;
 }
