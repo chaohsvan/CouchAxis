@@ -69,8 +69,8 @@ pnpm tauri build
 
 ```text
 src-tauri/target/release/couchaxis.exe
-src-tauri/target/release/bundle/nsis/CouchAxis_0.1.0_x64-setup.exe
-src-tauri/target/release/bundle/msi/CouchAxis_0.1.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/CouchAxis_0.1.1_x64-setup.exe
+src-tauri/target/release/bundle/msi/CouchAxis_0.1.1_x64_en-US.msi
 ```
 
 ## 项目边界

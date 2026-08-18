@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "couchaxis"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "lofty",

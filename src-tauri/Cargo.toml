@@ -1,6 +1,6 @@
 [package]
 name = "couchaxis"
-version = "0.1.0"
+version = "0.1.1"
 description = "Gamepad-first local video browser"
 authors = ["CouchAxis contributors"]
 edition = "2021"
